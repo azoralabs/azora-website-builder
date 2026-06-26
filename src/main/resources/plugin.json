@@ -1,0 +1,13 @@
+{
+  "id": "dev.azora.website_builder",
+  "name": "Website Builder",
+  "version": "0.0.1",
+  "description": "Build React websites visually — pages and components as files, generated to a Vite app.",
+  "author": "Azora",
+  "mainClass": "dev.azora.website.builder.WebsiteBuilderPlugin",
+  "accentColor": "#FF22C55E",
+  "iconPath": "icon.xml",
+  "minAppVersion": "1.0.0",
+  "category": "GENERATOR",
+  "tags": ["website", "react", "web"]
+}
