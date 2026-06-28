@@ -5,19 +5,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import dev.azora.website.builder.domain.WebComponent
 import dev.azora.website.builder.domain.CanvasPoint
+import dev.azora.website.builder.domain.WebComponent
 import dev.azora.website.builder.domain.WebSceneDoc
 
 /**
  * Visual editor for a page/component scene: the [ComponentTreeCanvas] on the left and the
- * [ComponentPropertiesPanel] on the right, sharing a local selection.
+ * [ComponentPropertiesPanel] on the right, sharing a local selection. Operates over the scene's node
+ * pool ([nodes], rooted at [rootId]).
  */
 @Composable
 fun WebSceneEditor(
-    root: WebComponent,
+    nodes: List<WebComponent>,
+    rootId: String,
     positions: Map<String, CanvasPoint>,
-    onRootChange: (WebComponent) -> Unit,
+    onNodesChange: (List<WebComponent>) -> Unit,
     onPersistPosition: (String, CanvasPoint) -> Unit,
     modifier: Modifier = Modifier,
     components: List<WebSceneDoc> = emptyList(),
@@ -26,29 +28,30 @@ fun WebSceneEditor(
     onInstance: (nodeId: String, componentName: String) -> Unit = { _, _ -> },
     onOpenComponent: (componentName: String) -> Unit = {}
 ) {
-    var selectedId by remember(root.id) { mutableStateOf<String?>(null) }
-    val selected = selectedId?.let { WebComponentTree.find(root, it) }
+    var selectedId by remember(rootId) { mutableStateOf<String?>(null) }
+    val selected = selectedId?.let { id -> WebComponentTree.byId(nodes, id) }
 
     // Double-click detection: the canvas only reports single selections, so two selects of the same
     // node within the window count as a double-click. Double-clicking a component-instance node opens
     // that component's implementation in its own editor tab (via onOpenComponent).
-    var lastClickId by remember(root.id) { mutableStateOf<String?>(null) }
-    var lastClickAt by remember(root.id) { mutableStateOf(0L) }
+    var lastClickId by remember(rootId) { mutableStateOf<String?>(null) }
+    var lastClickAt by remember(rootId) { mutableStateOf(0L) }
 
     // Selection sync with the Website Preview panel via the shared bus: adopt a selection published
     // elsewhere (e.g. clicking an element in the preview) only when it resolves to a node in *this*
     // scene, so other open scenes don't clobber each other.
     val busSelection by WebSelectionBus.selectedId.collectAsState()
-    LaunchedEffect(busSelection, root) {
+    LaunchedEffect(busSelection, nodes) {
         val id = busSelection
-        if (id != selectedId && (id == null || WebComponentTree.find(root, id) != null)) {
+        if (id != selectedId && (id == null || WebComponentTree.byId(nodes, id) != null)) {
             selectedId = id
         }
     }
 
     Row(modifier.fillMaxSize()) {
         ComponentTreeCanvas(
-            root = root,
+            nodes = nodes,
+            rootId = rootId,
             persistedPositions = positions,
             selectedId = selectedId,
             onSelect = { id ->
@@ -61,7 +64,7 @@ fun WebSceneEditor(
                 selectedId = id
                 WebSelectionBus.select(id)
             },
-            onRootChange = onRootChange,
+            onNodesChange = onNodesChange,
             onPersistPosition = onPersistPosition,
             modifier = Modifier.weight(1f),
             components = components,
@@ -71,10 +74,10 @@ fun WebSceneEditor(
         )
         ComponentPropertiesPanel(
             selected = selected,
-            isRoot = selected?.id == root.id,
-            onChange = { edited -> onRootChange(WebComponentTree.replace(root, edited.id) { edited }) },
+            isRoot = selected?.id == rootId,
+            onChange = { edited -> onNodesChange(WebComponentTree.replaceNode(nodes, edited.id) { edited }) },
             onDelete = {
-                selected?.let { onRootChange(WebComponentTree.remove(root, it.id)) }
+                selected?.let { onNodesChange(WebComponentTree.removeNode(nodes, it.id)) }
                 selectedId = null
             }
         )

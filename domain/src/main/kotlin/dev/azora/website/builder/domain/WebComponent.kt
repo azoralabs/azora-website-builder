@@ -43,8 +43,10 @@ enum class WebTextAlign { START, CENTER, END }
 enum class WebArrangement { START, CENTER, END, SPACE_BETWEEN }
 
 /**
- * A node in a page's visual component tree. Each variant is a small, serializable description of a
- * widget; the React generator and the in-Studio preview both walk this one tree.
+ * A node in a page's visual component tree. Nodes live in a flat per-scene pool
+ * ([WebSceneDoc.nodes]); containers reference their children by id through ordered [WebSlot]s, so the
+ * same node can be reused in multiple slots. The React generator and the in-Studio preview both walk
+ * from [WebSceneDoc.rootId], resolving slots against the pool.
  */
 @Serializable
 sealed interface WebComponent {
@@ -52,13 +54,24 @@ sealed interface WebComponent {
     val modifier: WebModifier
 }
 
+/**
+ * One ordered out-slot on a container (Unreal array-pin style). [childId] references a node in the
+ * scene pool, or `null` for an empty slot added via `+`. Multiple slots (across containers) may
+ * reference the same [childId] — the node renders once per reference.
+ */
+@Serializable
+data class WebSlot(
+    val id: String = randomSlotId(),
+    val childId: String? = null
+)
+
 @Serializable
 @SerialName("column")
 data class WebColumn(
     override val id: String = randomComponentId(),
     override val modifier: WebModifier = WebModifier(),
     val arrangement: WebArrangement = WebArrangement.START,
-    val children: List<WebComponent> = emptyList()
+    val slots: List<WebSlot> = emptyList()
 ) : WebComponent
 
 @Serializable
@@ -67,7 +80,7 @@ data class WebRow(
     override val id: String = randomComponentId(),
     override val modifier: WebModifier = WebModifier(),
     val arrangement: WebArrangement = WebArrangement.START,
-    val children: List<WebComponent> = emptyList()
+    val slots: List<WebSlot> = emptyList()
 ) : WebComponent
 
 @Serializable
@@ -75,7 +88,7 @@ data class WebRow(
 data class WebBox(
     override val id: String = randomComponentId(),
     override val modifier: WebModifier = WebModifier(),
-    val children: List<WebComponent> = emptyList()
+    val slots: List<WebSlot> = emptyList()
 ) : WebComponent
 
 @Serializable
@@ -133,3 +146,6 @@ data class WebSpacer(
 
 /** Generates a short, collision-resistant id for a component. */
 fun randomComponentId(): String = "c_" + kotlin.random.Random.nextLong().toString(36)
+
+/** Generates a short id for an empty out-slot on a container (distinct from component ids). */
+fun randomSlotId(): String = "s_" + kotlin.random.Random.nextLong().toString(36)

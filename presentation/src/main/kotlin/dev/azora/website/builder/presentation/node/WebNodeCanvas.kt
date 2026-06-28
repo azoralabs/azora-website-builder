@@ -36,7 +36,9 @@ data class WebNode(
     val subtitle: String = "",
     val accent: Color,
     val hasInput: Boolean = true,
-    val outputs: List<WebPort> = emptyList()
+    val outputs: List<WebPort> = emptyList(),
+    /** When true, the node shows a `+` add-slot row after its output ports (container nodes). */
+    val canAddSlots: Boolean = false
 )
 
 data class WebNodeLink(
@@ -51,7 +53,16 @@ data class WebNodeLink(
  * Website node editor over the Azora SDK canvas ([AzoraEditorCanvas]). Translates [WebNode]/
  * [WebNodeLink] into the SDK's models and forwards interaction back through plain callbacks.
  *
+ * Right-click menus (empty-area, node body, output port) are supplied as [contextMenu],
+ * [nodeContextMenu] and [portContextMenu] slots and rendered/anchored by the SDK — this composable
+ * only forwards them and supplies per-node content.
+ *
  * @param contextMenu Empty-area (right-click) menu; gets the screen-space anchor and canvas-space point.
+ * @param onAddSlot Invoked when a node's `+` add-slot row is clicked (container nodes only).
+ * @param nodeContextMenu Per-node right-click menu; receives the node id, screen-space anchor
+ *   (canvas-local), and a dismiss callback.
+ * @param portContextMenu Per-output-port right-click menu; receives the node id, port index, the
+ *   screen-space anchor (canvas-local), and a dismiss callback.
  */
 @Composable
 fun WebNodeCanvas(
@@ -63,7 +74,10 @@ fun WebNodeCanvas(
     onNodeMove: (nodeId: String, position: Offset) -> Unit,
     onNodeMoveEnd: () -> Unit,
     modifier: Modifier = Modifier,
-    contextMenu: @Composable (screenPos: Offset, worldPos: Offset, onDismiss: () -> Unit) -> Unit = { _, _, _ -> }
+    contextMenu: @Composable (screenPos: Offset, worldPos: Offset, onDismiss: () -> Unit) -> Unit = { _, _, _ -> },
+    onAddSlot: (nodeId: String) -> Unit = {},
+    nodeContextMenu: @Composable (nodeId: String, screenPos: Offset, onDismiss: () -> Unit) -> Unit = { _, _, _ -> },
+    portContextMenu: @Composable (nodeId: String, portIndex: Int, screenPos: Offset, onDismiss: () -> Unit) -> Unit = { _, _, _, _ -> }
 ) {
     val nodesRef = rememberUpdatedState(nodes)
     val onLinkRef = rememberUpdatedState(onLink)
@@ -161,10 +175,14 @@ fun WebNodeCanvas(
             val worldPos = Offset(position.x - canvasState.panOffset.x, position.y - canvasState.panOffset.y)
             contextMenu(position, worldPos, onDismiss)
         },
+        // Right-click menus are rendered/anchored by the SDK; the host only supplies the bodies.
+        nodeContextMenuContent = nodeContextMenu,
+        portContextMenuContent = portContextMenu,
         nodeContent = { node, isSelected, isLinkSource, _, linkTransitionType, panOffset,
                         isInputConnected, connectedOutputPortIndices, onSelectNode, onStartLink,
                         onEndLink, onMove, onEndDrag, onDismissContextMenus,
-                        onInputPortPositioned, onOutputPortPositioned ->
+                        onInputPortPositioned, onOutputPortPositioned,
+                        onContextMenu, onPortContextMenu ->
             val webNode = nodesRef.value.firstOrNull { it.id == node.id } ?: return@AzoraEditorCanvas
             AzoraNode(
                 node = node, isSelected = isSelected, isLinkSource = isLinkSource, linkTransitionType = linkTransitionType,
@@ -175,6 +193,11 @@ fun WebNodeCanvas(
                 outputPortDefs = webNode.outputs.mapIndexed { index, port -> AzoraOutputPortDef(index = index, label = port.label, type = portTypeForColor(port.color)) },
                 isInputConnected = isInputConnected, connectedOutputPortIndices = connectedOutputPortIndices,
                 onInputPortPositioned = onInputPortPositioned, onOutputPortPositioned = onOutputPortPositioned,
+                // The SDK wires these to dispatch its node/port context-menu actions; forward as-is.
+                onContextMenu = onContextMenu,
+                onPortContextMenu = onPortContextMenu,
+                canAddOutputPort = webNode.canAddSlots,
+                onAddOutputPort = { onAddSlot(webNode.id) },
                 headerContent = { inputPorts, outputPorts -> WebNodeBody(webNode, inputPorts, outputPorts) }
             )
         },

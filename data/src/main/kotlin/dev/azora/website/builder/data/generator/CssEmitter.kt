@@ -14,11 +14,24 @@ object CssEmitter {
     fun cssClass(id: String): String =
         "n_" + id.map { if (it.isLetterOrDigit() || it == '_') it else '_' }.joinToString("")
 
-    /** Full stylesheet for one page/component tree. */
-    fun fileCss(root: WebComponent, instances: Map<String, String>): String =
-        buildSource { emitNode(this, root, instances) }
+    /** Full stylesheet for one page/component: walks nodes reachable from [rootId] via slots,
+     *  emitting one rule per node (a reused node referenced by several slots still gets a single rule;
+     *  the global `visited` set also breaks cycles). Instance anchors contribute no rules. */
+    fun fileCss(rootId: String, nodes: List<WebComponent>, instances: Map<String, String>): String {
+        val pool = nodes.associateBy { it.id }
+        val root = pool[rootId] ?: return ""
+        val visited = mutableSetOf<String>()
+        return buildSource { emitReachable(this, root, pool, instances, visited) }
+    }
 
-    private fun emitNode(scope: GenScope, node: WebComponent, instances: Map<String, String>) {
+    private fun emitReachable(
+        scope: GenScope,
+        node: WebComponent,
+        pool: Map<String, WebComponent>,
+        instances: Map<String, String>,
+        visited: MutableSet<String>
+    ) {
+        if (!visited.add(node.id)) return // already emitted (dedup + cycle break)
         if (instances.containsKey(node.id)) return // instance anchor: the referenced component styles itself
         val decls = declarations(node)
         if (decls.isNotEmpty()) {
@@ -27,7 +40,19 @@ object CssEmitter {
             scope.write("}")
             scope.blank()
         }
-        childrenOf(node).forEach { emitNode(scope, it, instances) }
+        when (node) {
+            is WebColumn, is WebRow, is WebBox -> slotChildIds(node).forEach { cid ->
+                pool[cid]?.let { emitReachable(scope, it, pool, instances, visited) }
+            }
+            else -> {}
+        }
+    }
+
+    private fun slotChildIds(c: WebComponent): List<String> = when (c) {
+        is WebColumn -> c.slots.mapNotNull { it.childId }
+        is WebRow -> c.slots.mapNotNull { it.childId }
+        is WebBox -> c.slots.mapNotNull { it.childId }
+        else -> emptyList()
     }
 
     /** Per-node CSS selector. A button also carries the `.az-button` base class (global `index.css`),
@@ -38,13 +63,6 @@ object CssEmitter {
     private fun selectorFor(node: WebComponent): String {
         val cls = cssClass(node.id)
         return if (node is WebButton) ".az-button.$cls" else ".$cls"
-    }
-
-    private fun childrenOf(c: WebComponent): List<WebComponent> = when (c) {
-        is WebColumn -> c.children
-        is WebRow -> c.children
-        is WebBox -> c.children
-        else -> emptyList()
     }
 
     private fun declarations(c: WebComponent): List<String> {

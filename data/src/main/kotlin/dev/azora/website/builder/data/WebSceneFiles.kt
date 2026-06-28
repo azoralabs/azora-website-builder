@@ -6,6 +6,16 @@ import dev.azora.sdk.core.io.FileReadResult
 import dev.azora.sdk.core.io.FileSystem
 import dev.azora.sdk.core.io.ListResult
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Reads/writes the website project's `.azscene` documents and the React output directory.
@@ -42,8 +52,13 @@ object WebSceneFiles {
         name.trim().map { if (it.isLetterOrDigit() || it == '-' || it == '_') it else '_' }
             .joinToString("").trim('_').ifBlank { "Untitled" }
 
-    /** Default JSON content for a brand-new `.azscene` document of [type]. */
-    fun newDocJson(type: String): String = json.encodeToString(WebSceneDoc(type = type))
+    /** Default JSON content for a brand-new `.azscene` document of [type]. PAGE/COMPONENT docs get a
+     *  root container so there's something to wire nodes into. */
+    fun newDocJson(type: String): String =
+        json.encodeToString(
+            if (type == WebSceneType.PAGE || type == WebSceneType.COMPONENT) WebSceneDoc.withRoot(type = type)
+            else WebSceneDoc(type = type)
+        )
 
     /** Conventional locations; used only by the initial project scaffold (the writers below). */
     fun pagePath(projectPath: String, name: String) = "$projectPath/$PAGES_DIR/$name$EXT"
@@ -80,11 +95,72 @@ object WebSceneFiles {
         val baseName = path.substringAfterLast('/').removeSuffix(EXT)
         return when (val r = fs.readFromFile(path)) {
             is FileReadResult.Success -> runCatching {
-                json.decodeFromString<WebSceneDoc>(r.content)
+                json.decodeFromString<WebSceneDoc>(migrateLegacyJson(r.content))
                     .let { if (it.name.isBlank()) it.copy(name = baseName) else it }
             }.getOrNull()
             is FileReadResult.Error -> null
         }
+    }
+
+    /**
+     * Converts a legacy `.azn` JSON (parent-child `root` tree + `freeNodes`, inline `children`) into
+     * the pool model (`nodes` + `rootId`, containers hold `slots` referencing child ids). No-op for
+     * files already in the new shape (no `"root"` key). Operates on the JSON DOM so we don't need a
+     * duplicate Kotlin model of the old layout.
+     */
+    internal fun migrateLegacyJson(content: String): String {
+        val parsed = runCatching { json.parseToJsonElement(content) }.getOrNull() ?: return content
+        val obj = parsed.jsonObject
+        val rootEl = obj["root"] ?: return content // already pool-shaped
+        val containerTypes = setOf("column", "row", "box")
+        val collected = LinkedHashMap<String, JsonObject>()
+
+        fun JsonElement?.str(): String? = (this as? JsonPrimitive)?.content
+
+        fun visit(nodeEl: JsonElement) {
+            val node = nodeEl.jsonObject
+            val id = node["id"].str() ?: return
+            if (collected.containsKey(id)) return
+            if (node["type"].str() in containerTypes) {
+                val children = (node["children"] as? JsonArray) ?: emptyList()
+                val emptySlotIds = (node["emptySlotIds"] as? JsonArray) ?: emptyList()
+                val slots = buildJsonArray {
+                    children.forEachIndexed { i, child ->
+                        child.jsonObject["id"].str()?.let { cid ->
+                            add(buildJsonObject {
+                                put("id", JsonPrimitive("s_${id}_$i"))
+                                put("childId", JsonPrimitive(cid))
+                            })
+                        }
+                    }
+                    emptySlotIds.forEach { sid ->
+                        sid.str()?.let { sidStr ->
+                            add(buildJsonObject {
+                                put("id", JsonPrimitive(sidStr))
+                                put("childId", JsonNull)
+                            })
+                        }
+                    }
+                }
+                collected[id] = buildJsonObject {
+                    node.forEach { (k, v) -> if (k != "children" && k != "emptySlotIds") put(k, v) }
+                    put("slots", slots)
+                }
+                children.forEach { visit(it) }
+            } else {
+                collected[id] = node
+            }
+        }
+
+        visit(rootEl)
+        (obj["freeNodes"] as? JsonArray)?.forEach { visit(it) }
+        val rootId = rootEl.jsonObject["id"].str() ?: ""
+
+        return buildJsonObject {
+            obj.forEach { (k, v) -> if (k != "root" && k != "freeNodes") put(k, v) }
+            put("nodes", buildJsonArray { collected.values.forEach { add(it) } })
+            put("rootId", JsonPrimitive(rootId))
+        }.toString()
     }
 
     suspend fun write(fs: FileSystem, path: String, doc: WebSceneDoc) {

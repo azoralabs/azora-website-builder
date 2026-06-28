@@ -38,7 +38,9 @@ fun AzsceneEditorScreen(type: String, filePath: String, context: PluginContext) 
     var dirty by remember(filePath) { mutableStateOf(false) }
 
     LaunchedEffect(filePath) {
-        doc = WebSceneFiles.read(fs, filePath) ?: WebSceneDoc(type = type, name = baseName)
+        doc = WebSceneFiles.read(fs, filePath)
+            ?: if (type == WebSceneType.PAGE || type == WebSceneType.COMPONENT) WebSceneDoc.withRoot(type = type, name = baseName)
+            else WebSceneDoc(type = type, name = baseName)
         components = WebSceneFiles.loadComponents(fs, projectPath)
         if (type == WebSceneType.NAVIGATION) {
             pages = WebSceneFiles.loadPages(fs, projectPath)
@@ -103,9 +105,10 @@ fun AzsceneEditorScreen(type: String, filePath: String, context: PluginContext) 
             WebSceneType.NAVIGATION -> ConfigNavEditor(current, pages, onChange = ::update, modifier = Modifier.weight(1f))
             WebSceneType.CONFIG -> ConfigForm(current, onChange = ::update, modifier = Modifier.weight(1f))
             else -> WebSceneEditor(
-                root = current.root,
+                nodes = current.nodes,
+                rootId = current.rootId,
                 positions = current.positions,
-                onRootChange = { root -> mutate { d -> d.copy(root = root) } },
+                onNodesChange = { n -> mutate { d -> d.copy(nodes = n) } },
                 onPersistPosition = { id, pt -> mutate { d -> d.copy(positions = d.positions + (id to pt)) } },
                 modifier = Modifier.weight(1f),
                 components = components,

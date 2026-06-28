@@ -9,6 +9,7 @@ import dev.azora.website.builder.domain.WebRow
 import dev.azora.website.builder.domain.WebBox
 import dev.azora.website.builder.domain.WebButton
 import dev.azora.website.builder.domain.WebSceneDoc
+import dev.azora.website.builder.domain.WebSlot
 import dev.azora.website.builder.data.WebSceneFiles
 
 /**
@@ -43,14 +44,14 @@ class ReactSiteGenerator(private val fileSystem: FileSystem) {
         components.forEach { doc ->
             val name = pascal(doc.name)
             fileSystem.writeToFile("$gen/src/components/$name.jsx", module(name, doc, reactNames))
-            fileSystem.writeToFile("$gen/src/components/$name.css", CssEmitter.fileCss(doc.root, doc.instances))
+            fileSystem.writeToFile("$gen/src/components/$name.css", CssEmitter.fileCss(doc.rootId, doc.nodes, doc.instances))
         }
 
         // ----- pages -----
         val routePages = pages.map { doc ->
             val name = pascal(doc.name)
             fileSystem.writeToFile("$gen/src/pages/$name.jsx", module(name, doc, reactNames))
-            fileSystem.writeToFile("$gen/src/pages/$name.css", CssEmitter.fileCss(doc.root, doc.instances))
+            fileSystem.writeToFile("$gen/src/pages/$name.css", CssEmitter.fileCss(doc.rootId, doc.nodes, doc.instances))
             RoutePage(componentName = name, route = doc.route.ifBlank { "/" }, isHome = doc.route.isBlank() || doc.route == "/")
         }
         fileSystem.writeToFile("$gen/src/App.jsx", ReactProjectFiles.appJsx(routePages))
@@ -58,31 +59,42 @@ class ReactSiteGenerator(private val fileSystem: FileSystem) {
 
     /** Builds one `.jsx` module: css import, child-component imports, and the default-exported function. */
     private fun module(name: String, doc: WebSceneDoc, reactNames: Map<String, String>): String {
+        val pool = doc.nodes.associateBy { it.id }
+        val root = pool[doc.rootId]
         val imports = doc.instances.values.toSet().mapNotNull { reactNames[it] }.distinct().sorted()
         return buildSource {
             write("import './$name.css'")
-            if (treeHasButton(doc.root)) write("import AzButton from '../components/AzButton.jsx'")
+            if (root != null && treeHasButton(root, pool)) write("import AzButton from '../components/AzButton.jsx'")
             imports.forEach { write("import $it from '../components/$it.jsx'") }
             blank()
             write("export default function $name() {")
             gen {
                 write("return (")
-                gen { JsxEmitter.emit(this, doc.root, doc.instances, reactNames) }
+                if (root != null) gen { JsxEmitter.emit(this, root, pool, doc.instances, reactNames) }
+                else write("<div />")
                 write(")")
             }
             write("}")
         }
     }
 
-    /** Whether [c]'s own tree directly contains a button node (instances are separate modules that
-     *  import [AzButton] themselves), so the module knows to import the AzButton component. */
-    private fun treeHasButton(c: WebComponent): Boolean = when (c) {
-        is WebButton -> true
-        is WebColumn -> c.children.any { treeHasButton(it) }
-        is WebRow -> c.children.any { treeHasButton(it) }
-        is WebBox -> c.children.any { treeHasButton(it) }
-        else -> false
+    /** Whether [root]'s reachable graph contains a button node (instances are separate modules that
+     *  import [AzButton] themselves), so the module knows to import the AzButton component. `visiting`
+     *  guards against cycles. */
+    private fun treeHasButton(root: WebComponent, pool: Map<String, WebComponent>, visiting: Set<String> = emptySet()): Boolean {
+        if (root.id in visiting) return false
+        return when (root) {
+            is WebButton -> true
+            is WebColumn -> root.slots.anySlotChild(pool) { treeHasButton(it, pool, visiting + root.id) }
+            is WebRow -> root.slots.anySlotChild(pool) { treeHasButton(it, pool, visiting + root.id) }
+            is WebBox -> root.slots.anySlotChild(pool) { treeHasButton(it, pool, visiting + root.id) }
+            else -> false
+        }
     }
+
+    /** True if any occupied slot of this container resolves (via [pool]) to a node satisfying [pred]. */
+    private fun List<WebSlot>.anySlotChild(pool: Map<String, WebComponent>, pred: (WebComponent) -> Boolean): Boolean =
+        any { s -> s.childId?.let { pool[it] }?.let(pred) == true }
 
     private fun sanitizeAppName(name: String): String =
         name.lowercase().filter { it.isLetterOrDigit() || it == '-' }.trim('-').ifBlank { "site" }

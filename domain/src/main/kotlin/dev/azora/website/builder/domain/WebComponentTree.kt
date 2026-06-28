@@ -1,56 +1,84 @@
 package dev.azora.website.builder.domain
 
-import dev.azora.website.builder.domain.*
+import dev.azora.canvas.domain.AzoraNodeSlot
+import dev.azora.canvas.domain.AzoraSlotGraph
+import dev.azora.canvas.domain.AzoraSlotNodeAdapter
 
 /**
- * Generic, immutable operations over a [WebComponent] tree, used by the `.azscene` editors.
- * Only [WebColumn]/[WebRow]/[WebBox] hold children; every other variant is a leaf.
+ * Operations over a scene's flat node pool ([WebSceneDoc.nodes]). The pool/slot algorithms (resolve,
+ * set/add/remove slot, add/remove node, reachable traversal) delegate to the generic SDK
+ * [AzoraSlotGraph]; this object only contributes the [WebComponent]-specific bits: which variants are
+ * containers, how to read/replace their [WebSlot]s, type labels, and the palette factory.
+ *
+ * Containers reference children by id through ordered slots, so the same node may be referenced by
+ * several slots. A node is "free-floating" when no slot reachable from the root references it.
  */
 object WebComponentTree {
 
-    fun childrenOf(c: WebComponent): List<WebComponent> = when (c) {
-        is WebColumn -> c.children
-        is WebRow -> c.children
-        is WebBox -> c.children
-        else -> emptyList()
+    /** Bridges the generic [AzoraSlotGraph] to [WebComponent] (maps [WebSlot] ↔ [AzoraNodeSlot]). */
+    private val slotAdapter = object : AzoraSlotNodeAdapter<WebComponent> {
+        override fun id(node: WebComponent): String = node.id
+        override fun slots(node: WebComponent): List<AzoraNodeSlot> =
+            slotsOf(node).map { AzoraNodeSlot(it.id, it.childId) }
+        override fun isContainer(node: WebComponent): Boolean = this@WebComponentTree.isContainer(node)
+        override fun withSlots(node: WebComponent, slots: List<AzoraNodeSlot>): WebComponent =
+            this@WebComponentTree.withSlots(node, slots.map { WebSlot(it.id, it.childId) })
+        override fun newSlotId(): String = randomSlotId()
     }
+
+    private fun graph(nodes: List<WebComponent>): AzoraSlotGraph<WebComponent> = AzoraSlotGraph(nodes, slotAdapter)
+
+    fun byId(nodes: List<WebComponent>, id: String): WebComponent? = graph(nodes).node(id)
 
     fun isContainer(c: WebComponent): Boolean = c is WebColumn || c is WebRow || c is WebBox
 
-    fun withChildren(c: WebComponent, children: List<WebComponent>): WebComponent = when (c) {
-        is WebColumn -> c.copy(children = children)
-        is WebRow -> c.copy(children = children)
-        is WebBox -> c.copy(children = children)
+    fun slotsOf(c: WebComponent): List<WebSlot> = when (c) {
+        is WebColumn -> c.slots
+        is WebRow -> c.slots
+        is WebBox -> c.slots
+        else -> emptyList()
+    }
+
+    fun withSlots(c: WebComponent, slots: List<WebSlot>): WebComponent = when (c) {
+        is WebColumn -> c.copy(slots = slots)
+        is WebRow -> c.copy(slots = slots)
+        is WebBox -> c.copy(slots = slots)
         else -> c
     }
 
-    fun find(root: WebComponent, id: String): WebComponent? {
-        if (root.id == id) return root
-        for (child in childrenOf(root)) find(child, id)?.let { return it }
-        return null
-    }
+    /** Replaces the node with `id` via [transform], leaving the rest of the pool untouched. */
+    fun replaceNode(nodes: List<WebComponent>, id: String, transform: (WebComponent) -> WebComponent): List<WebComponent> =
+        graph(nodes).replaceNode(id, transform).nodes
 
-    fun replace(root: WebComponent, id: String, transform: (WebComponent) -> WebComponent): WebComponent {
-        if (root.id == id) return transform(root)
-        return withChildren(root, childrenOf(root).map { replace(it, id, transform) })
-    }
+    /** Wires slot `slotId` on container `containerId` to reference `childId` (the core of drag-connect
+     *  and reuse: the node isn't moved, so other slots can still reference it). */
+    fun setSlotChild(nodes: List<WebComponent>, containerId: String, slotId: String, childId: String?): List<WebComponent> =
+        graph(nodes).setSlotChild(containerId, slotId, childId).nodes
 
-    fun remove(root: WebComponent, id: String): WebComponent {
-        val kept = childrenOf(root).filter { it.id != id }.map { remove(it, id) }
-        return withChildren(root, kept)
-    }
+    /** Appends a new empty slot to container `containerId` (the `+` affordance). */
+    fun addSlot(nodes: List<WebComponent>, containerId: String): List<WebComponent> =
+        graph(nodes).addSlot(containerId).nodes
 
-    fun addChild(root: WebComponent, parentId: String, child: WebComponent): WebComponent =
-        replace(root, parentId) { node -> if (isContainer(node)) withChildren(node, childrenOf(node) + child) else node }
+    /** Removes slot `slotId` from container `containerId` (right-click delete; remaining slots keep order). */
+    fun removeSlot(nodes: List<WebComponent>, containerId: String, slotId: String): List<WebComponent> =
+        graph(nodes).removeSlot(containerId, slotId).nodes
 
-    fun reparent(root: WebComponent, id: String, newParentId: String): WebComponent {
-        if (id == newParentId) return root
-        val moving = find(root, id) ?: return root
-        if (find(moving, newParentId) != null) return root
-        val target = find(root, newParentId) ?: return root
-        if (!isContainer(target)) return root
-        return addChild(remove(root, id), newParentId, moving)
-    }
+    /** Appends a new node to the pool (free-floating until a slot references it). */
+    fun addNode(nodes: List<WebComponent>, node: WebComponent): List<WebComponent> =
+        graph(nodes).addNode(node).nodes
+
+    /** Removes node `id` from the pool and clears any slot references pointing at it (they become empty). */
+    fun removeNode(nodes: List<WebComponent>, id: String): List<WebComponent> =
+        graph(nodes).removeNode(id).nodes
+
+    /** Resolves a container's slots to their referenced nodes in pool order (duplicates kept, so a node
+     *  referenced by N slots appears N times). Missing refs are skipped. */
+    fun slotChildren(nodes: List<WebComponent>, c: WebComponent): List<WebComponent> =
+        graph(nodes).slotChildren(c)
+
+    /** Every node reachable from [rootId] via slots, each once (deduped, cycle-safe). */
+    fun reachableFrom(nodes: List<WebComponent>, rootId: String): List<WebComponent> =
+        graph(nodes).reachableFrom(rootId)
 
     fun typeLabel(c: WebComponent): String = when (c) {
         is WebColumn -> "Column"
@@ -70,9 +98,9 @@ object WebComponentTree {
         is WebLink -> "${c.text} → ${c.href}"
         is WebImage -> c.alt.ifBlank { c.src }
         is WebInput -> c.placeholder
-        is WebColumn -> "${c.children.size} child(ren)"
-        is WebRow -> "${c.children.size} child(ren)"
-        is WebBox -> "${c.children.size} child(ren)"
+        is WebColumn -> "${slotsOf(c).count { it.childId != null }} child(ren)"
+        is WebRow -> "${slotsOf(c).count { it.childId != null }} child(ren)"
+        is WebBox -> "${slotsOf(c).count { it.childId != null }} child(ren)"
         is WebSpacer -> ""
     }
 

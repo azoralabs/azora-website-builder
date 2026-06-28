@@ -58,7 +58,7 @@ fun WebsitePreviewPanel(context: PluginContext) {
     val viewPages = remember(pages, live) {
         val overridden = pages.map { disk ->
             live[disk.name]?.takeIf { it.type == WebSceneType.PAGE }
-                ?.let { disk.copy(root = it.root, instances = it.instances, route = it.route, nav = it.nav) } ?: disk
+                ?.let { disk.copy(nodes = it.nodes, rootId = it.rootId, instances = it.instances, route = it.route, nav = it.nav) } ?: disk
         }
         val present = pages.mapTo(mutableSetOf()) { it.name }
         // Append brand-new (unsaved) pages so they appear before their first save+poll too.
@@ -67,7 +67,7 @@ fun WebsitePreviewPanel(context: PluginContext) {
     val viewComponents = remember(componentsByName, live) {
         val merged = componentsByName.mapValues { (_, disk) ->
             live[disk.name]?.takeIf { it.type == WebSceneType.COMPONENT }
-                ?.let { disk.copy(root = it.root, instances = it.instances) } ?: disk
+                ?.let { disk.copy(nodes = it.nodes, rootId = it.rootId, instances = it.instances) } ?: disk
         }.toMutableMap()
         live.values.filter { it.type == WebSceneType.COMPONENT && it.name !in merged }.forEach { merged[it.name] = it }
         merged
@@ -75,8 +75,8 @@ fun WebsitePreviewPanel(context: PluginContext) {
 
     LaunchedEffect(busSelection, viewPages) {
         val id = busSelection ?: return@LaunchedEffect
-        if (viewPages.getOrNull(selected)?.let { WebComponentTree.find(it.root, id) } != null) return@LaunchedEffect
-        val idx = viewPages.indexOfFirst { WebComponentTree.find(it.root, id) != null }
+        if (viewPages.getOrNull(selected)?.let { WebComponentTree.byId(it.nodes, id) } != null) return@LaunchedEffect
+        val idx = viewPages.indexOfFirst { WebComponentTree.byId(it.nodes, id) != null }
         if (idx >= 0) selected = idx
     }
 
@@ -88,7 +88,7 @@ fun WebsitePreviewPanel(context: PluginContext) {
             val loadedPages = WebSceneFiles.loadPages(fs, projectPath)
             val loadedComps = WebSceneFiles.loadComponents(fs, projectPath).associateBy { it.name }
             val pageChanged = loadedPages.size != pages.size ||
-                loadedPages.zip(pages).any { (a, b) -> a.name != b.name || a.route != b.route || a.root != b.root }
+                loadedPages.zip(pages).any { (a, b) -> a.name != b.name || a.route != b.route || a.nodes != b.nodes || a.rootId != b.rootId }
             if (pageChanged) pages = loadedPages
             if (loadedComps != componentsByName) componentsByName = loadedComps
             delay(2000)
@@ -123,7 +123,9 @@ fun WebsitePreviewPanel(context: PluginContext) {
                             Text("No pages yet — create a .azn page.", color = SiteContentColor.copy(alpha = 0.5f))
                         }
                     } else {
-                        WebComponentView(page.root, page.instances, viewComponents, busSelection)
+                        val pool = page.nodes.associateBy { it.id }
+                        val root = pool[page.rootId]
+                        if (root != null) WebComponentView(root, pool, page.instances, viewComponents, busSelection)
                     }
                 }
             }
@@ -137,30 +139,43 @@ private val SiteBackground = Color.White
 private val SiteContentColor = Color(0xFF000000)
 
 /**
- * Renders one [WebComponent] (recursively); instance anchors expand the referenced component.
- * [selectedId] is the component id selected in the node editor (via [WebSelectionBus]); the matching
- * element is highlighted, and clicking any element publishes its id back so the editor selects it.
+ * Renders one [WebComponent] against the scene's node [pool]; container slots resolve to their
+ * referenced nodes, so a node reused in several slots renders once per reference. Instance anchors
+ * expand the referenced component (switching to that component's pool). [selectedId] is the component
+ * id selected in the node editor (via [WebSelectionBus]); the matching element is highlighted, and
+ * clicking any element publishes its id back so the editor selects it.
  *
  * [lockedId] is set once we descend into a component instance: the page editor only knows the
  * instance's anchor node, not the component's inner ids, so every click inside the expansion is
  * attributed to that anchor (the inner elements forward to it rather than selecting themselves).
+ * [nodePath] guards against slot cycles (a slot referencing an ancestor); [visiting] guards against
+ * instance-of-itself cycles by component name.
  */
 @Composable
 private fun WebComponentView(
     component: WebComponent,
+    pool: Map<String, WebComponent>,
     instances: Map<String, String>,
     componentsByName: Map<String, WebSceneDoc>,
     selectedId: String?,
     lockedId: String? = null,
-    visiting: Set<String> = emptySet()
+    visiting: Set<String> = emptySet(),
+    nodePath: Set<String> = emptySet()
 ) {
+    if (component.id in nodePath) return // a slot referenced an ancestor
+    val childPath = nodePath + component.id
+
     instances[component.id]?.let { name ->
         val comp = componentsByName[name]
         // Attribute the whole expansion to the outermost anchor (nested instances keep the first).
         val lock = lockedId ?: component.id
         Box(Modifier.selectable(component.id, selectedId, lockedId)) {
             if (comp != null && name !in visiting) {
-                WebComponentView(comp.root, comp.instances, componentsByName, selectedId, lock, visiting + name)
+                val compPool = comp.nodes.associateBy { it.id }
+                val compRoot = compPool[comp.rootId]
+                if (compRoot != null) {
+                    WebComponentView(compRoot, compPool, comp.instances, componentsByName, selectedId, lock, visiting + name, childPath)
+                }
             } else {
                 Text("⟨$name⟩", color = SiteContentColor.copy(alpha = 0.5f), fontSize = 12.sp)
             }
@@ -177,20 +192,26 @@ private fun WebComponentView(
                 verticalArrangement = columnArrangement(component.arrangement, component.modifier.gap),
                 horizontalAlignment = if (component.arrangement == WebArrangement.CENTER) Alignment.CenterHorizontally else Alignment.Start,
                 modifier = component.modifier.toModifier(component.id, selectedId, lockedId)
-            ) { component.children.forEach { WebComponentView(it, instances, componentsByName, selectedId, lockedId, visiting) } }
+            ) {
+                component.slots.forEach { slot -> slot.childId?.let { pool[it] }?.let { WebComponentView(it, pool, instances, componentsByName, selectedId, lockedId, visiting, childPath) } }
+            }
 
             is WebRow -> Row(
                 horizontalArrangement = rowArrangement(component.arrangement, component.modifier.gap),
                 // CSS align-items: flex-start (center only when arrangement is CENTER).
                 verticalAlignment = if (component.arrangement == WebArrangement.CENTER) Alignment.CenterVertically else Alignment.Top,
                 modifier = component.modifier.toModifier(component.id, selectedId, lockedId)
-            ) { component.children.forEach { WebComponentView(it, instances, componentsByName, selectedId, lockedId, visiting) } }
+            ) {
+                component.slots.forEach { slot -> slot.childId?.let { pool[it] }?.let { WebComponentView(it, pool, instances, componentsByName, selectedId, lockedId, visiting, childPath) } }
+            }
 
             // CSS: display:flex; flex-direction:column (no justify/align) → a top-aligned flex column.
             is WebBox -> Column(
                 verticalArrangement = columnArrangement(WebArrangement.START, component.modifier.gap),
                 modifier = component.modifier.toModifier(component.id, selectedId, lockedId)
-            ) { component.children.forEach { WebComponentView(it, instances, componentsByName, selectedId, lockedId, visiting) } }
+            ) {
+                component.slots.forEach { slot -> slot.childId?.let { pool[it] }?.let { WebComponentView(it, pool, instances, componentsByName, selectedId, lockedId, visiting, childPath) } }
+            }
 
             // <span>: inherits the ambient (cascaded) text style; this node's own font props are
             // already merged into it above.

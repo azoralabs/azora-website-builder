@@ -10,6 +10,7 @@ import dev.azora.sdk.core.project.domain.ProjectRunTargetKind
 import dev.azora.website.builder.domain.WebColumn
 import dev.azora.website.builder.domain.WebFontWeight
 import dev.azora.website.builder.domain.WebModifier
+import dev.azora.website.builder.domain.WebSlot
 import dev.azora.website.builder.domain.WebText
 import dev.azora.sdk.plugin.core.AzoraPlugin
 import dev.azora.sdk.plugin.core.AzsceneTemplate
@@ -114,17 +115,18 @@ class WebsiteBuilderPlugin : AzoraPlugin {
             fileSystem.createDirectory("$projectPath/${WebSceneFiles.COMPONENTS_DIR}")
 
             if (WebSceneFiles.loadPages(fileSystem, projectPath).isEmpty()) {
+                val heading = WebText(text = "Welcome to $brand", modifier = WebModifier(fontSize = 40, fontWeight = WebFontWeight.BOLD))
+                val sub = WebText(text = "Built visually with Azora Studio.", modifier = WebModifier(fontSize = 18, textColor = "#9CA3AF"))
+                val root = WebColumn(
+                    modifier = WebModifier(fillMaxWidth = true, padding = 48, gap = 16),
+                    slots = listOf(WebSlot(childId = heading.id), WebSlot(childId = sub.id))
+                )
                 val home = WebSceneDoc(
                     type = WebSceneType.PAGE,
                     name = "Home",
                     route = "/",
-                    root = WebColumn(
-                        modifier = WebModifier(fillMaxWidth = true, padding = 48, gap = 16),
-                        children = listOf(
-                            WebText(text = "Welcome to $brand", modifier = WebModifier(fontSize = 40, fontWeight = WebFontWeight.BOLD)),
-                            WebText(text = "Built visually with Azora Studio.", modifier = WebModifier(fontSize = 18, textColor = "#9CA3AF"))
-                        )
-                    )
+                    nodes = listOf(root, heading, sub),
+                    rootId = root.id
                 )
                 WebSceneFiles.writePage(fileSystem, projectPath, "Home", home)
             }
