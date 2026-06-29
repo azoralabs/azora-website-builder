@@ -8,6 +8,7 @@ import dev.azora.sdk.core.project.domain.ProjectTemplateGenerator
 import dev.azora.sdk.core.project.domain.ProjectRunTarget
 import dev.azora.sdk.core.project.domain.ProjectRunTargetKind
 import dev.azora.website.builder.domain.WebColumn
+import dev.azora.website.builder.domain.NavLink
 import dev.azora.website.builder.domain.WebFontWeight
 import dev.azora.website.builder.domain.WebModifier
 import dev.azora.website.builder.domain.WebSlot
@@ -18,7 +19,9 @@ import dev.azora.sdk.plugin.core.PluginCategory
 import dev.azora.sdk.plugin.core.PluginContext
 import dev.azora.sdk.plugin.core.PluginManifest
 import dev.azora.sdk.plugin.core.PluginPanelDescriptor
+import dev.azora.sdk.plugin.core.SettingsTabDescriptor
 import dev.azora.website.builder.presentation.AzsceneEditorScreen
+import dev.azora.website.builder.presentation.WebsiteBuilderSettingsTab
 import dev.azora.website.builder.presentation.WebsitePreviewPanel
 import dev.azora.website.builder.presentation.theme.AzoraMaterialTheme
 import dev.azora.website.builder.data.generator.ReactSiteGenerator
@@ -85,6 +88,15 @@ class WebsiteBuilderPlugin : AzoraPlugin {
         AzoraMaterialTheme { WebsitePreviewPanel(context) }
     }
 
+    /** Contributes a "Website Builder" tab to Studio Settings (project-level config/nav pickers). */
+    override fun settingsTabs(): List<SettingsTabDescriptor> =
+        listOf(SettingsTabDescriptor("website-builder", "Website Builder"))
+
+    @Composable
+    override fun settingsTabContent(tabId: String, context: PluginContext) {
+        if (tabId == "website-builder") AzoraMaterialTheme { WebsiteBuilderSettingsTab(context) }
+    }
+
     /** The `.azscene` document types this plugin edits. */
     override fun azsceneEditorTypes(): Set<String> = WebSceneType.all
 
@@ -115,25 +127,37 @@ class WebsiteBuilderPlugin : AzoraPlugin {
             fileSystem.createDirectory("$projectPath/${WebSceneFiles.COMPONENTS_DIR}")
 
             if (WebSceneFiles.loadPages(fileSystem, projectPath).isEmpty()) {
-                val heading = WebText(text = "Welcome to $brand", modifier = WebModifier(fontSize = 40, fontWeight = WebFontWeight.BOLD))
-                val sub = WebText(text = "Built visually with Azora Studio.", modifier = WebModifier(fontSize = 18, textColor = "#9CA3AF"))
-                val root = WebColumn(
-                    modifier = WebModifier(fillMaxWidth = true, padding = 48, gap = 16),
-                    slots = listOf(WebSlot(childId = heading.id), WebSlot(childId = sub.id))
-                )
-                val home = WebSceneDoc(
-                    type = WebSceneType.PAGE,
-                    name = "Home",
-                    route = "/",
-                    nodes = listOf(root, heading, sub),
-                    rootId = root.id
-                )
-                WebSceneFiles.writePage(fileSystem, projectPath, "Home", home)
+                // Scaffold three starter pages with working routes.
+                data class StarterPage(val name: String, val route: String, val heading: String, val body: String)
+                listOf(
+                    StarterPage("Home", "/", "Welcome to $brand", "Built visually with Azora Studio."),
+                    StarterPage("About", "/about", "About $brand", "Learn more about what we do."),
+                    StarterPage("ContactUs", "/contact-us", "Contact Us", "Get in touch — we'd love to hear from you.")
+                ).forEach { sp ->
+                    val heading = WebText(text = sp.heading, modifier = WebModifier(fontSize = 40, fontWeight = WebFontWeight.BOLD))
+                    val body = WebText(text = sp.body, modifier = WebModifier(fontSize = 18, textColor = "#9CA3AF"))
+                    val root = WebColumn(
+                        modifier = WebModifier(fillMaxWidth = true, padding = 48, gap = 16),
+                        slots = listOf(WebSlot(childId = heading.id), WebSlot(childId = body.id))
+                    )
+                    WebSceneFiles.writePage(fileSystem, projectPath, sp.name, WebSceneDoc(
+                        type = WebSceneType.PAGE, name = sp.name, route = sp.route,
+                        nodes = listOf(root, heading, body), rootId = root.id
+                    ))
+                }
             }
 
-            // Site config scene (navigation), created once.
+            // Site config scene (WebsiteConfig.azn), created once.
             if (WebSceneFiles.readConfig(fileSystem, projectPath) == null) {
-                WebSceneFiles.writeConfig(fileSystem, projectPath, WebSceneDoc(type = WebSceneType.CONFIG, name = "website"))
+                WebSceneFiles.writeConfig(fileSystem, projectPath, WebSceneDoc(type = WebSceneType.CONFIG, name = "WebsiteConfig",
+                    settings = mapOf("title" to brand, "description" to "Built with Azora Studio", "themeColor" to "#D14EEA")))
+            }
+
+            // Navigation scene (WebsiteNavigation.azn), created once with Home/About/Contact entries.
+            if (WebSceneFiles.loadNavigation(fileSystem, projectPath).isEmpty()) {
+                WebSceneFiles.write(fileSystem, "$projectPath/WebsiteNavigation${WebSceneFiles.EXT}",
+                    WebSceneDoc(type = WebSceneType.NAVIGATION, name = "WebsiteNavigation",
+                        nav = listOf(NavLink("Home", "/"), NavLink("About", "/about"), NavLink("Contact Us", "/contact-us"))))
             }
 
             ReactSiteGenerator(fileSystem).generate(projectPath, project.name, brand)

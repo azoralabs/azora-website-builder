@@ -76,7 +76,7 @@ fun ComponentTreeCanvas(
         WebComponentTree.slotsOf(c).mapNotNull { slot ->
             val childId = slot.childId ?: return@mapNotNull null
             if (nodes.none { it.id == childId }) return@mapNotNull null // dangling ref: nothing to draw
-            WebNodeLink("${c.id}->${slot.id}", c.id, slot.id, childId, AzoraPalette.AccentGreen.copy(alpha = 0.7f))
+            WebNodeLink("${c.id}->${slot.id}", c.id, slot.id, childId, AzoraPalette.AccentGreen.copy(alpha = 0.7f), slot.reroutePoints)
         }
     }
 
@@ -98,6 +98,18 @@ fun ComponentTreeCanvas(
             NodeContextMenu(
                 position = screenPos,
                 items = listOf(
+                    NodeMenuItem("Duplicate") {
+                        val (newNodes, newId) = WebComponentTree.duplicate(nodes, nodeId)
+                        if (newId != null) {
+                            onNodesChange(newNodes)
+                            // Place the copy just off the original so it's visible immediately.
+                            val offset = pos(nodeId).let { Offset(it.x + 40f, it.y + 40f) }
+                            localPositions[newId] = offset
+                            onPersistPosition(newId, CanvasPoint(offset.x, offset.y))
+                            onSelect(newId)
+                        }
+                        onDismiss()
+                    },
                     NodeMenuItem("Delete node", color = AzoraPalette.AccentRed) {
                         onNodesChange(WebComponentTree.removeNode(nodes, nodeId))
                         if (selectedId == nodeId) onSelect(null)
@@ -106,6 +118,15 @@ fun ComponentTreeCanvas(
                 ),
                 onDismiss = onDismiss
             )
+        },
+        onRerouteAdded = { containerId, slotId, point, insertIndex ->
+            onNodesChange(WebComponentTree.addReroute(nodes, containerId, slotId, point, insertIndex))
+        },
+        onRerouteRemoved = { containerId, slotId, rerouteId ->
+            onNodesChange(WebComponentTree.removeReroute(nodes, containerId, slotId, rerouteId))
+        },
+        onRerouteMoved = { containerId, slotId, rerouteId, dx, dy ->
+            onNodesChange(WebComponentTree.moveReroute(nodes, containerId, slotId, rerouteId, dx, dy))
         },
         portContextMenu = { nodeId, portIndex, screenPos, onDismiss ->
             val container = WebComponentTree.byId(nodes, nodeId)

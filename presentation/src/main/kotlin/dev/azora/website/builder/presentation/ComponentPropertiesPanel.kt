@@ -157,13 +157,14 @@ private fun ModifierEditor(mod: WebMod, c: WebComponent, onChange: (WebComponent
         WebMod.PADDING -> PropertyRow("all") { NumberInput(m.padding ?: 0) { set(m.copy(padding = it.coerceAtLeast(0))) } }
         WebMod.SPACED_BY -> PropertyRow("space") { NumberInput(m.gap ?: 0) { set(m.copy(gap = it.coerceAtLeast(0))) } }
         WebMod.ARRANGEMENT -> Chips(arrangementOptions, c.arrangementOrNull() ?: WebArrangement.START) { onChange(c.withArrangement(it)) }
-        WebMod.BACKGROUND -> colorField("color", m.backgroundColor) { set(m.copy(backgroundColor = it)) }
+        WebMod.BACKGROUND -> colorField(c.id, "color", m.backgroundColor) { set(m.copy(backgroundColor = it)) }
         WebMod.BORDER -> {
             PropertyRow("width") { NumberInput(m.borderWidth ?: 0, min = 1) { set(m.copy(borderWidth = it)) } }
-            colorField("color", m.borderColor) { set(m.copy(borderColor = it)) }
+            colorField(c.id, "color", m.borderColor) { set(m.copy(borderColor = it)) }
+            Chips(borderPositionOptions, m.borderPosition) { set(m.copy(borderPosition = it)) }
         }
-        WebMod.CORNER_RADIUS -> PropertyRow("radius") { NumberInput(m.cornerRadius ?: 0) { set(m.copy(cornerRadius = it.coerceAtLeast(0))) } }
-        WebMod.TEXT_COLOR -> colorField("color", m.textColor) { set(m.copy(textColor = it)) }
+        WebMod.CORNER_RADIUS -> CornerRadiusEditor(c.id, m) { set(it) }
+        WebMod.TEXT_COLOR -> colorField(c.id, "color", m.textColor) { set(m.copy(textColor = it)) }
         WebMod.FONT_SIZE -> PropertyRow("size") { NumberInput(m.fontSize ?: 0, "px", min = 1) { set(m.copy(fontSize = it)) } }
         WebMod.FONT_WEIGHT -> Chips(fontWeightOptions, m.fontWeight) { set(m.copy(fontWeight = it)) }
         WebMod.TEXT_ALIGN -> Chips(textAlignOptions, m.textAlign) { set(m.copy(textAlign = it)) }
@@ -278,16 +279,41 @@ private fun <T> Chips(options: List<Pair<T, String>>, selected: T, onSelect: (T)
     }
 }
 
+/** Per-corner (TL/TR/BR/BL), optionally-elliptical (x/y) radius editor. With "link all" on, editing any
+ *  corner sets all four uniformly. The link toggle is keyed on [componentId] so it survives the value
+ *  edits (which produce a new modifier each keystroke). */
+@Composable
+private fun CornerRadiusEditor(componentId: String, m: WebModifier, set: (WebModifier) -> Unit) {
+    var link by remember(componentId) { mutableStateOf(false) }
+    val cur = m.corners ?: m.cornerRadius?.let { WebCornerRadius.uniform(it) } ?: WebCornerRadius()
+    fun write(next: WebCornerRadius) = set(m.copy(corners = next, cornerRadius = null))
+    fun uniform(x: Int, y: Int) = WebCornerRadius(WebCorner(x, y), WebCorner(x, y), WebCorner(x, y), WebCorner(x, y))
+    PropertyRow("link all") { Toggle(link) { link = it } }
+    CornerRow("top-left", cur.topLeft) { x, y -> write(if (link) uniform(x, y) else cur.copy(topLeft = WebCorner(x, y))) }
+    CornerRow("top-right", cur.topRight) { x, y -> write(if (link) uniform(x, y) else cur.copy(topRight = WebCorner(x, y))) }
+    CornerRow("bottom-right", cur.bottomRight) { x, y -> write(if (link) uniform(x, y) else cur.copy(bottomRight = WebCorner(x, y))) }
+    CornerRow("bottom-left", cur.bottomLeft) { x, y -> write(if (link) uniform(x, y) else cur.copy(bottomLeft = WebCorner(x, y))) }
+}
+
+@Composable
+private fun CornerRow(label: String, corner: WebCorner, onSet: (x: Int, y: Int) -> Unit) {
+    PropertyRow(label) {
+        NumberInput(corner.x, "x") { x -> onSet(x, corner.y) }
+        NumberInput(corner.y, "y") { onSet(corner.x, it) }
+    }
+}
+
 @Composable
 private fun textField(label: String, value: String, onChange: (String) -> Unit) {
     AzoraTextField(value = value, onValueChange = onChange, title = label, singleLine = true, modifier = Modifier.fillMaxWidth())
 }
 
-/** Color swatch + inline [ColorPicker] (toggled open); writes `#RRGGBB` (or null to clear). */
+/** Color swatch + inline [ColorPicker] (toggled open); writes `#RRGGBB` (or null to clear). The open
+ *  state is keyed on [componentId] (not the value) so picking a color doesn't snap the picker shut. */
 @Composable
-private fun colorField(label: String, hex: String?, onChange: (String?) -> Unit) {
+private fun colorField(componentId: String, label: String, hex: String?, onChange: (String?) -> Unit) {
     val palette = MaterialTheme.colorScheme
-    var open by remember(hex) { mutableStateOf(false) }
+    var open by remember(componentId) { mutableStateOf(false) }
     val color = parseColorOrNull(hex)
     PropertyRow(label) {
         Text(hex ?: "none", color = palette.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
@@ -339,7 +365,11 @@ private fun WebMod.applies(c: WebComponent): Boolean = when (this) {
     else -> true
 }
 
+/** Whether this modifier card should show. A card persists once explicitly added (its key is in
+ *  [WebModifier.active]) even if the value equals the default; it's removed only via × (which clears
+ *  the key and resets the value). The value-based fallback keeps cards for docs saved before `active`. */
 private fun WebMod.isActive(c: WebComponent): Boolean {
+    if (this.name in c.modifier.active) return true
     val m = c.modifier
     return when (this) {
         WebMod.SIZE -> m.fillMaxWidth || m.fillMaxHeight || m.width != null || m.height != null
@@ -348,7 +378,7 @@ private fun WebMod.isActive(c: WebComponent): Boolean {
         WebMod.ARRANGEMENT -> (c.arrangementOrNull() ?: WebArrangement.START) != WebArrangement.START
         WebMod.BACKGROUND -> m.backgroundColor != null
         WebMod.BORDER -> m.borderWidth != null
-        WebMod.CORNER_RADIUS -> m.cornerRadius != null
+        WebMod.CORNER_RADIUS -> m.corners != null || m.cornerRadius != null
         WebMod.TEXT_COLOR -> m.textColor != null
         WebMod.FONT_SIZE -> m.fontSize != null
         WebMod.FONT_WEIGHT -> m.fontWeight != WebFontWeight.NORMAL
@@ -358,38 +388,42 @@ private fun WebMod.isActive(c: WebComponent): Boolean {
 }
 
 private fun WebMod.add(c: WebComponent): WebComponent {
+    val key = this.name
+    fun WebModifier.mark() = copy(active = (active + key).distinct())
     val m = c.modifier
     return when (this) {
-        WebMod.SIZE -> c.withModifier(m.copy(fillMaxWidth = true))
-        WebMod.PADDING -> c.withModifier(m.copy(padding = 16))
-        WebMod.SPACED_BY -> c.withModifier(m.copy(gap = 8))
-        WebMod.ARRANGEMENT -> c.withArrangement(WebArrangement.CENTER)
-        WebMod.BACKGROUND -> c.withModifier(m.copy(backgroundColor = "#FFFFFF"))
-        WebMod.BORDER -> c.withModifier(m.copy(borderWidth = 1, borderColor = "#000000"))
-        WebMod.CORNER_RADIUS -> c.withModifier(m.copy(cornerRadius = 8))
-        WebMod.TEXT_COLOR -> c.withModifier(m.copy(textColor = "#000000"))
-        WebMod.FONT_SIZE -> c.withModifier(m.copy(fontSize = 16))
-        WebMod.FONT_WEIGHT -> c.withModifier(m.copy(fontWeight = WebFontWeight.MEDIUM))
-        WebMod.TEXT_ALIGN -> c.withModifier(m.copy(textAlign = WebTextAlign.CENTER))
-        WebMod.OPACITY -> c.withModifier(m.copy(opacity = 100))
+        WebMod.SIZE -> c.withModifier(m.copy(fillMaxWidth = true).mark())
+        WebMod.PADDING -> c.withModifier(m.copy(padding = 16).mark())
+        WebMod.SPACED_BY -> c.withModifier(m.copy(gap = 8).mark())
+        WebMod.ARRANGEMENT -> c.withArrangement(WebArrangement.CENTER).withModifier(m.mark())
+        WebMod.BACKGROUND -> c.withModifier(m.copy(backgroundColor = "#FFFFFF").mark())
+        WebMod.BORDER -> c.withModifier(m.copy(borderWidth = 1, borderColor = "#000000").mark())
+        WebMod.CORNER_RADIUS -> c.withModifier(m.copy(corners = WebCornerRadius.uniform(8), cornerRadius = null).mark())
+        WebMod.TEXT_COLOR -> c.withModifier(m.copy(textColor = "#000000").mark())
+        WebMod.FONT_SIZE -> c.withModifier(m.copy(fontSize = 16).mark())
+        WebMod.FONT_WEIGHT -> c.withModifier(m.copy(fontWeight = WebFontWeight.MEDIUM).mark())
+        WebMod.TEXT_ALIGN -> c.withModifier(m.copy(textAlign = WebTextAlign.CENTER).mark())
+        WebMod.OPACITY -> c.withModifier(m.copy(opacity = 100).mark())
     }
 }
 
 private fun WebMod.remove(c: WebComponent): WebComponent {
+    val key = this.name
+    fun WebModifier.unmark() = copy(active = active - key)
     val m = c.modifier
     return when (this) {
-        WebMod.SIZE -> c.withModifier(m.copy(fillMaxWidth = false, fillMaxHeight = false, width = null, height = null))
-        WebMod.PADDING -> c.withModifier(m.copy(padding = null))
-        WebMod.SPACED_BY -> c.withModifier(m.copy(gap = null))
-        WebMod.ARRANGEMENT -> c.withArrangement(WebArrangement.START)
-        WebMod.BACKGROUND -> c.withModifier(m.copy(backgroundColor = null))
-        WebMod.BORDER -> c.withModifier(m.copy(borderWidth = null, borderColor = null))
-        WebMod.CORNER_RADIUS -> c.withModifier(m.copy(cornerRadius = null))
-        WebMod.TEXT_COLOR -> c.withModifier(m.copy(textColor = null))
-        WebMod.FONT_SIZE -> c.withModifier(m.copy(fontSize = null))
-        WebMod.FONT_WEIGHT -> c.withModifier(m.copy(fontWeight = WebFontWeight.NORMAL))
-        WebMod.TEXT_ALIGN -> c.withModifier(m.copy(textAlign = WebTextAlign.START))
-        WebMod.OPACITY -> c.withModifier(m.copy(opacity = null))
+        WebMod.SIZE -> c.withModifier(m.copy(fillMaxWidth = false, fillMaxHeight = false, width = null, height = null).unmark())
+        WebMod.PADDING -> c.withModifier(m.copy(padding = null).unmark())
+        WebMod.SPACED_BY -> c.withModifier(m.copy(gap = null).unmark())
+        WebMod.ARRANGEMENT -> c.withArrangement(WebArrangement.START).withModifier(m.unmark())
+        WebMod.BACKGROUND -> c.withModifier(m.copy(backgroundColor = null).unmark())
+        WebMod.BORDER -> c.withModifier(m.copy(borderWidth = null, borderColor = null).unmark())
+        WebMod.CORNER_RADIUS -> c.withModifier(m.copy(corners = null, cornerRadius = null).unmark())
+        WebMod.TEXT_COLOR -> c.withModifier(m.copy(textColor = null).unmark())
+        WebMod.FONT_SIZE -> c.withModifier(m.copy(fontSize = null).unmark())
+        WebMod.FONT_WEIGHT -> c.withModifier(m.copy(fontWeight = WebFontWeight.NORMAL).unmark())
+        WebMod.TEXT_ALIGN -> c.withModifier(m.copy(textAlign = WebTextAlign.START).unmark())
+        WebMod.OPACITY -> c.withModifier(m.copy(opacity = null).unmark())
     }
 }
 
@@ -405,6 +439,9 @@ private val fontWeightOptions = listOf(
 )
 private val textAlignOptions = listOf(
     WebTextAlign.START to "Start", WebTextAlign.CENTER to "Center", WebTextAlign.END to "End"
+)
+private val borderPositionOptions = listOf(
+    WebBorderPosition.INSIDE to "Inside", WebBorderPosition.OUTSIDE to "Outside", WebBorderPosition.CENTER to "Center"
 )
 
 // ---------------- helpers ----------------

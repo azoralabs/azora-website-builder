@@ -15,15 +15,30 @@ import dev.azora.canvas.domain.AzoraSlotNodeAdapter
  */
 object WebComponentTree {
 
-    /** Bridges the generic [AzoraSlotGraph] to [WebComponent] (maps [WebSlot] ↔ [AzoraNodeSlot]). */
+    /** Bridges the generic [AzoraSlotGraph] to [WebComponent] (maps [WebSlot] ↔ [AzoraNodeSlot]).
+     *  [withSlots] merges by slot id so slot-only edits preserve each slot's reroutePoints (the generic
+     *  [AzoraNodeSlot] carries only id/childId). */
     private val slotAdapter = object : AzoraSlotNodeAdapter<WebComponent> {
         override fun id(node: WebComponent): String = node.id
         override fun slots(node: WebComponent): List<AzoraNodeSlot> =
             slotsOf(node).map { AzoraNodeSlot(it.id, it.childId) }
         override fun isContainer(node: WebComponent): Boolean = this@WebComponentTree.isContainer(node)
-        override fun withSlots(node: WebComponent, slots: List<AzoraNodeSlot>): WebComponent =
-            this@WebComponentTree.withSlots(node, slots.map { WebSlot(it.id, it.childId) })
+        override fun withSlots(node: WebComponent, slots: List<AzoraNodeSlot>): WebComponent {
+            val byId = slotsOf(node).associateBy { it.id }
+            return this@WebComponentTree.withSlots(node, slots.map { s ->
+                WebSlot(s.id, s.childId, byId[s.id]?.reroutePoints ?: emptyList())
+            })
+        }
         override fun newSlotId(): String = randomSlotId()
+        override fun withId(node: WebComponent, id: String): WebComponent = node.withNodeId(id)
+        override fun newNodeId(): String = randomComponentId()
+    }
+
+    /** Copy of [this] with a different id (used by duplication). */
+    private fun WebComponent.withNodeId(newId: String): WebComponent = when (this) {
+        is WebColumn -> copy(id = newId); is WebRow -> copy(id = newId); is WebBox -> copy(id = newId)
+        is WebText -> copy(id = newId); is WebButton -> copy(id = newId); is WebImage -> copy(id = newId)
+        is WebLink -> copy(id = newId); is WebInput -> copy(id = newId); is WebSpacer -> copy(id = newId)
     }
 
     private fun graph(nodes: List<WebComponent>): AzoraSlotGraph<WebComponent> = AzoraSlotGraph(nodes, slotAdapter)
@@ -79,6 +94,46 @@ object WebComponentTree {
     /** Every node reachable from [rootId] via slots, each once (deduped, cycle-safe). */
     fun reachableFrom(nodes: List<WebComponent>, rootId: String): List<WebComponent> =
         graph(nodes).reachableFrom(rootId)
+
+    /** Duplicates node [id] (same content; a container copy shares the original's children) into a
+     *  free-floating pool node. Returns the new pool + the new node's id (null if [id] not found). */
+    fun duplicate(nodes: List<WebComponent>, id: String): Pair<List<WebComponent>, String?> {
+        val (g, newId) = graph(nodes).duplicate(id)
+        return g.nodes to newId
+    }
+
+    // --- Reroute points (waypoints on a slot's link) — web-specific, live on the slot. ---
+
+    fun addReroute(
+        nodes: List<WebComponent>, containerId: String, slotId: String,
+        point: WebReroutePoint, insertIndex: Int
+    ): List<WebComponent> = replaceNode(nodes, containerId) { c ->
+        if (!isContainer(c)) c else withSlots(c, slotsOf(c).map { s ->
+            if (s.id != slotId) s else {
+                val pts = s.reroutePoints.toMutableList()
+                pts.add(insertIndex.coerceIn(0, pts.size), point)
+                s.copy(reroutePoints = pts)
+            }
+        })
+    }
+
+    fun removeReroute(nodes: List<WebComponent>, containerId: String, slotId: String, rerouteId: String): List<WebComponent> =
+        replaceNode(nodes, containerId) { c ->
+            if (!isContainer(c)) c else withSlots(c, slotsOf(c).map { s ->
+                if (s.id != slotId) s else s.copy(reroutePoints = s.reroutePoints.filterNot { it.id == rerouteId })
+            })
+        }
+
+    fun moveReroute(
+        nodes: List<WebComponent>, containerId: String, slotId: String,
+        rerouteId: String, dx: Float, dy: Float
+    ): List<WebComponent> = replaceNode(nodes, containerId) { c ->
+        if (!isContainer(c)) c else withSlots(c, slotsOf(c).map { s ->
+            if (s.id != slotId) s else s.copy(reroutePoints = s.reroutePoints.map { p ->
+                if (p.id != rerouteId) p else p.copy(x = p.x + dx, y = p.y + dy)
+            })
+        })
+    }
 
     fun typeLabel(c: WebComponent): String = when (c) {
         is WebColumn -> "Column"

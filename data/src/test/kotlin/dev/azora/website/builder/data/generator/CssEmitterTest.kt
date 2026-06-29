@@ -1,8 +1,12 @@
 package dev.azora.website.builder.data.generator
 
 import dev.azora.website.builder.domain.WebArrangement
+import dev.azora.website.builder.domain.WebBorderPosition
 import dev.azora.website.builder.domain.WebButton
+import dev.azora.website.builder.domain.WebBox
 import dev.azora.website.builder.domain.WebColumn
+import dev.azora.website.builder.domain.WebCorner
+import dev.azora.website.builder.domain.WebCornerRadius
 import dev.azora.website.builder.domain.WebFontWeight
 import dev.azora.website.builder.domain.WebModifier
 import dev.azora.website.builder.domain.WebSlot
@@ -102,5 +106,53 @@ class CssEmitterTest {
         // Two slots → two spans.
         val occurrences = jsx.split("<span className=\"n_c_hi\">").size - 1
         assertTrue(occurrences == 2, "expected the reused node rendered twice, got:\n$jsx")
+    }
+
+    @Test
+    fun `per-corner elliptical radius emits the CSS slash form`() {
+        val node = WebBox(
+            id = "c_b",
+            modifier = WebModifier(corners = WebCornerRadius(
+                topLeft = WebCorner(2, 4), topRight = WebCorner(0, 0),
+                bottomRight = WebCorner(8, 8), bottomLeft = WebCorner(1, 3)
+            ))
+        )
+        val css = CssEmitter.fileCss(node.id, listOf(node), emptyMap())
+        assertTrue("border-radius: 2px 0px 8px 1px / 4px 0px 8px 3px" in css, "expected per-corner elliptical radius, got:\n$css")
+    }
+
+    @Test
+    fun `legacy uniform cornerRadius still emits a radius`() {
+        val node = WebBox(id = "c_b", modifier = WebModifier(cornerRadius = 6))
+        val css = CssEmitter.fileCss(node.id, listOf(node), emptyMap())
+        assertTrue("border-radius: 6px 6px 6px 6px / 6px 6px 6px 6px" in css, "legacy uniform radius should expand to all corners, got:\n$css")
+    }
+
+    @Test
+    fun `border position inside outside center emit expected CSS`() {
+        fun css(pos: WebBorderPosition) = CssEmitter.fileCss("c_b", listOf(WebBox(id = "c_b", modifier = WebModifier(borderWidth = 2, borderColor = "#FF0000", borderPosition = pos))), emptyMap())
+        val inside = css(WebBorderPosition.INSIDE)
+        val outside = css(WebBorderPosition.OUTSIDE)
+        val center = css(WebBorderPosition.CENTER)
+        assertTrue("box-sizing: border-box" in inside && "border: 2px solid #FF0000" in inside, "INSIDE → border-box + border, got:\n$inside")
+        assertTrue("box-sizing: content-box" in outside && "border: 2px solid #FF0000" in outside, "OUTSIDE → content-box + border, got:\n$outside")
+        assertTrue("border:" !in center && "box-shadow: inset 0 0 0 1px #FF0000, 0 0 0 1px #FF0000" in center, "CENTER → box-shadow ring, no border, got:\n$center")
+    }
+
+    @Test
+    fun `border plus corner radius emits both so the browser rounds the border`() {
+        // A bordered element with a corner radius: CSS `border` + `border-radius` on the same rule →
+        // the browser draws a rounded border. (Per-corner + position all on one element.)
+        val node = WebBox(
+            id = "c_b",
+            modifier = WebModifier(
+                borderWidth = 3, borderColor = "#00FF00", borderPosition = WebBorderPosition.INSIDE,
+                corners = WebCornerRadius(topLeft = WebCorner(10, 10), topRight = WebCorner(10, 10), bottomRight = WebCorner(10, 10), bottomLeft = WebCorner(10, 10))
+            )
+        )
+        val css = CssEmitter.fileCss(node.id, listOf(node), emptyMap())
+        assertTrue("border: 3px solid #00FF00" in css, "expected a border declaration, got:\n$css")
+        assertTrue("border-radius: 10px 10px 10px 10px / 10px 10px 10px 10px" in css, "expected a border-radius declaration, got:\n$css")
+        assertTrue("box-sizing: border-box" in css, "INSIDE position → box-sizing: border-box, got:\n$css")
     }
 }

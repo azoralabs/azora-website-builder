@@ -23,15 +23,51 @@ data class WebModifier(
     val fontSize: Int? = null,
     val fontWeight: WebFontWeight = WebFontWeight.NORMAL,
     val textAlign: WebTextAlign = WebTextAlign.START,
-    /** Border radius in CSS px (`border-radius`). */
+    /** Per-corner, optionally-elliptical border radius. Legacy uniform radius is read from
+     *  [cornerRadius] (kept for backward-compat with older docs); new edits write [corners]. */
+    val corners: WebCornerRadius? = null,
+    /** Legacy uniform border radius in CSS px (older docs). Prefer [corners]. */
     val cornerRadius: Int? = null,
     /** Border width in CSS px (`border` with [borderColor]); null = no border. */
     val borderWidth: Int? = null,
     /** Border color as `#RRGGBB` (paired with [borderWidth]). */
     val borderColor: String? = null,
+    /** Where the border is drawn relative to the box edge. */
+    val borderPosition: WebBorderPosition = WebBorderPosition.OUTSIDE,
     /** Opacity as a percentage 0–100 (`opacity`); null = fully opaque. */
-    val opacity: Int? = null
+    val opacity: Int? = null,
+    /** Keys of modifiers the user explicitly added (so a card stays even when its value equals the
+     *  default, and survives reload). Removed only via the card's × (which also resets the value). */
+    val active: List<String> = emptyList()
 )
+
+/** One corner of a border radius: [x] = horizontal radius, [y] = vertical radius (CSS px). 0 = sharp. */
+@Serializable
+data class WebCorner(val x: Int = 0, val y: Int = 0)
+
+/** The four border radii (top-left, top-right, bottom-right, bottom-left), each optionally elliptical. */
+@Serializable
+data class WebCornerRadius(
+    val topLeft: WebCorner = WebCorner(),
+    val topRight: WebCorner = WebCorner(),
+    val bottomRight: WebCorner = WebCorner(),
+    val bottomLeft: WebCorner = WebCorner()
+) {
+    /** True if every corner is sharp (0/0) — the radius can be omitted from output. */
+    fun isZero(): Boolean =
+        topLeft.x == 0 && topLeft.y == 0 && topRight.x == 0 && topRight.y == 0 &&
+            bottomRight.x == 0 && bottomRight.y == 0 && bottomLeft.x == 0 && bottomLeft.y == 0
+
+    companion object {
+        /** Uniform circular radius (same [r] on every corner, x = y). */
+        fun uniform(r: Int): WebCornerRadius =
+            WebCornerRadius(WebCorner(r, r), WebCorner(r, r), WebCorner(r, r), WebCorner(r, r))
+    }
+}
+
+/** Where a border is drawn relative to the box edge (maps to CSS box-sizing / box-shadow). */
+@Serializable
+enum class WebBorderPosition { INSIDE, OUTSIDE, CENTER }
 
 @Serializable
 enum class WebFontWeight { NORMAL, MEDIUM, SEMI_BOLD, BOLD }
@@ -41,6 +77,11 @@ enum class WebTextAlign { START, CENTER, END }
 
 @Serializable
 enum class WebArrangement { START, CENTER, END, SPACE_BETWEEN }
+
+/** A reroute (waypoint) point on a slot's link, in canvas-local (pre-pan) coordinates — like node
+ *  positions. Lets the user bend a link by adding diamonds along it. */
+@Serializable
+data class WebReroutePoint(val id: String = randomSlotId(), val x: Float = 0f, val y: Float = 0f)
 
 /**
  * A node in a page's visual component tree. Nodes live in a flat per-scene pool
@@ -62,7 +103,9 @@ sealed interface WebComponent {
 @Serializable
 data class WebSlot(
     val id: String = randomSlotId(),
-    val childId: String? = null
+    val childId: String? = null,
+    /** Waypoints on this slot's link, letting the user bend the connection line. */
+    val reroutePoints: List<WebReroutePoint> = emptyList()
 )
 
 @Serializable

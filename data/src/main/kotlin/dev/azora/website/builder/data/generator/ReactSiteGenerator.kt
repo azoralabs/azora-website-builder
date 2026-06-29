@@ -27,6 +27,9 @@ class ReactSiteGenerator(private val fileSystem: FileSystem) {
 
         val pages = WebSceneFiles.loadPages(fileSystem, projectPath)
         val components = WebSceneFiles.loadComponents(fileSystem, projectPath)
+        // Navigation entries (from the first NAVIGATION .azn) + site config settings.
+        val nav = WebSceneFiles.loadNavigation(fileSystem, projectPath).flatMap { it.nav }
+        val configSettings = WebSceneFiles.readConfig(fileSystem, projectPath)?.settings ?: emptyMap()
 
         // Component name -> React component/file name, for resolving instances during emission.
         val reactNames: Map<String, String> = components.associate { it.name to pascal(it.name) }
@@ -34,7 +37,12 @@ class ReactSiteGenerator(private val fileSystem: FileSystem) {
         // ----- static scaffolding -----
         fileSystem.writeToFile("$gen/package.json", ReactProjectFiles.packageJson(app))
         fileSystem.writeToFile("$gen/vite.config.js", ReactProjectFiles.viteConfig)
-        fileSystem.writeToFile("$gen/index.html", ReactProjectFiles.indexHtml(title))
+        fileSystem.writeToFile("$gen/index.html",
+            ReactProjectFiles.indexHtml(
+                title = configSettings["title"] ?: title,
+                description = configSettings["description"] ?: "",
+                themeColor = configSettings["themeColor"] ?: ""
+            ))
         fileSystem.writeToFile("$gen/src/main.jsx", ReactProjectFiles.mainJsx)
         fileSystem.writeToFile("$gen/src/index.css", ReactProjectFiles.indexCss)
         // Our reusable custom button component (used instead of a native <button>).
@@ -54,7 +62,7 @@ class ReactSiteGenerator(private val fileSystem: FileSystem) {
             fileSystem.writeToFile("$gen/src/pages/$name.css", CssEmitter.fileCss(doc.rootId, doc.nodes, doc.instances))
             RoutePage(componentName = name, route = doc.route.ifBlank { "/" }, isHome = doc.route.isBlank() || doc.route == "/")
         }
-        fileSystem.writeToFile("$gen/src/App.jsx", ReactProjectFiles.appJsx(routePages))
+        fileSystem.writeToFile("$gen/src/App.jsx", ReactProjectFiles.appJsx(routePages, nav))
     }
 
     /** Builds one `.jsx` module: css import, child-component imports, and the default-exported function. */

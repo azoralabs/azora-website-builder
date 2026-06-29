@@ -17,11 +17,21 @@ import androidx.compose.runtime.*
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.azora.website.builder.domain.*
@@ -45,6 +55,7 @@ fun WebsitePreviewPanel(context: PluginContext) {
     var componentsByName by remember(projectPath) { mutableStateOf<Map<String, WebSceneDoc>>(emptyMap()) }
     var selected by remember(projectPath) { mutableStateOf(0) }
     var refresh by remember { mutableStateOf(0) }
+    var nav by remember(projectPath) { mutableStateOf<List<NavLink>>(emptyList()) }
 
     // Selection shared with the node editor. When a selection arrives from the editor for an element
     // that lives on a different page, switch to that page so the highlight is visible. (Instance
@@ -91,6 +102,8 @@ fun WebsitePreviewPanel(context: PluginContext) {
                 loadedPages.zip(pages).any { (a, b) -> a.name != b.name || a.route != b.route || a.nodes != b.nodes || a.rootId != b.rootId }
             if (pageChanged) pages = loadedPages
             if (loadedComps != componentsByName) componentsByName = loadedComps
+            val loadedNav = WebSceneFiles.loadNavigation(fs, projectPath).flatMap { it.nav }
+            if (loadedNav != nav) nav = loadedNav
             delay(2000)
         }
     }
@@ -112,20 +125,38 @@ fun WebsitePreviewPanel(context: PluginContext) {
         // site renders white with near-black default text. Surface also provides that as the default
         // content color, so unstyled text/links inherit it (as they do in the browser).
         Surface(Modifier.fillMaxSize(), color = SiteBackground, contentColor = SiteContentColor) {
-            // Match the browser's font: render with the OS system font (the generated CSS uses the
-            // `system-ui` stack), overriding any brand font (e.g. TT Rounds Neue) the host supplies
-            // via LocalTextStyle.
             ProvideTextStyle(LocalTextStyle.current.copy(fontFamily = FontFamily.Default, fontSize = 16.sp, color = SiteContentColor)) {
-                Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    val page = viewPages.getOrNull(selected)
-                    if (page == null) {
-                        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                            Text("No pages yet — create a .azn page.", color = SiteContentColor.copy(alpha = 0.5f))
+                Column(Modifier.fillMaxSize()) {
+                    // Site nav bar (from the navigation .azn) — matches the generated <nav> in App.jsx.
+                    if (nav.isNotEmpty()) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp)
+                            .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            nav.forEach { item ->
+                                val idx = viewPages.indexOfFirst { it.route == item.route }
+                                val isCurrent = idx >= 0 && idx == selected
+                                Text(
+                                    item.label,
+                                    color = if (isCurrent) SiteContentColor else SiteContentColor.copy(alpha = 0.65f),
+                                    fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.clickable(enabled = idx >= 0) { if (idx >= 0) selected = idx }
+                                        .padding(vertical = 4.dp)
+                                )
+                            }
                         }
-                    } else {
-                        val pool = page.nodes.associateBy { it.id }
-                        val root = pool[page.rootId]
-                        if (root != null) WebComponentView(root, pool, page.instances, viewComponents, busSelection)
+                        HorizontalDivider(color = SiteContentColor.copy(alpha = 0.1f))
+                    }
+                    Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        val page = viewPages.getOrNull(selected)
+                        if (page == null) {
+                            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                                Text("No pages yet — create a .azn page.", color = SiteContentColor.copy(alpha = 0.5f))
+                            }
+                        } else {
+                            val pool = page.nodes.associateBy { it.id }
+                            val root = pool[page.rootId]
+                            if (root != null) WebComponentView(root, pool, page.instances, viewComponents, busSelection)
+                        }
                     }
                 }
             }
@@ -226,7 +257,7 @@ private fun WebComponentView(
             // for unset fields, while every modifier the user sets is honored exactly as in the browser.
             is WebButton -> {
                 val mod = component.modifier
-                val shape = RoundedCornerShape((mod.cornerRadius ?: 8).dp)
+                val shape = webCornerShape(mod.effectiveCorners(8))
                 // Default height 36 only when neither fillMaxHeight nor an explicit height is set, so
                 // those modifiers aren't clobbered by the brand default (matches `.az-button`).
                 var base = mod.sizing()
@@ -234,7 +265,7 @@ private fun WebComponentView(
                 mod.opacity?.let { base = base.alpha(it.coerceIn(0, 100) / 100f) }
                 base = base.shadow(4.dp, shape).clip(shape)
                     .background(parseHex(mod.backgroundColor) ?: AzButtonColor)
-                mod.borderWidth?.let { w -> base = base.border(w.dp, parseHex(mod.borderColor) ?: Color.Black, shape) }
+                mod.borderWidth?.let { w -> base = base.webBorder(w, parseHex(mod.borderColor) ?: Color.Black, mod.borderPosition, mod.effectiveCorners(8)) }
                 base = base.selectable(component.id, selectedId, lockedId)
                 // padding modifier is all-sides (CssEmitter emits `padding: Npx`); default `.az-button`
                 // is horizontal-only (0 24px), so only fall back to that when padding is unset.
@@ -273,11 +304,11 @@ private fun WebComponentView(
             // <input>: plain native text field, honoring background/border/clip/alpha/size/padding.
             is WebInput -> {
                 val mod = component.modifier
-                val shape = RoundedCornerShape((mod.cornerRadius ?: 2).dp)
+                val shape = webCornerShape(mod.effectiveCorners(2))
                 var base = mod.sizing()
                 mod.opacity?.let { base = base.alpha(it.coerceIn(0, 100) / 100f) }
                 base = base.clip(shape).background(parseHex(mod.backgroundColor) ?: Color.White)
-                    .border((mod.borderWidth ?: 1).dp, parseHex(mod.borderColor) ?: Color(0xFF767676), shape)
+                    .webBorder(mod.borderWidth ?: 1, parseHex(mod.borderColor) ?: Color(0xFF767676), mod.borderPosition, mod.effectiveCorners(2))
                     .selectable(component.id, selectedId, lockedId)
                     .padding(horizontal = (mod.padding ?: 4).dp, vertical = (mod.padding ?: 2).dp)
                 Box(base) {
@@ -339,16 +370,75 @@ private fun WebModifier.sizing(): Modifier {
     return m
 }
 
+/** Resolved per-corner (possibly elliptical) radius: [corners] if set, else legacy uniform
+ *  [cornerRadius], else [default] (a brand default for chrome-drawing elements like buttons). */
+private fun WebModifier.effectiveCorners(default: Int): WebCornerRadius =
+    corners ?: cornerRadius?.let { WebCornerRadius.uniform(it) } ?: WebCornerRadius.uniform(default)
+
+/** A Compose [Shape] with per-corner, optionally-elliptical radii (matches the generated CSS slash form). */
+private fun webCornerShape(c: WebCornerRadius): Shape = object : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        fun corner(corner: WebCorner) = with(density) { CornerRadius(corner.x.dp.toPx(), corner.y.dp.toPx()) }
+        return Outline.Rounded(
+            RoundRect(
+                left = 0f, top = 0f, right = size.width, bottom = size.height,
+                topLeftCornerRadius = corner(c.topLeft),
+                topRightCornerRadius = corner(c.topRight),
+                bottomRightCornerRadius = corner(c.bottomRight),
+                bottomLeftCornerRadius = corner(c.bottomLeft)
+            )
+        )
+    }
+}
+
+/** Draws the border at [position] relative to the box edge (inside / outside / center), following the
+ *  per-corner radii — matching the generated CSS. Implemented as a filled rounded-rect **ring** (outer
+ *  minus inner via even-odd fill), which avoids stroke-centering/clipping quirks and always renders
+ *  rounded corners. Applied before the corner clip in [toModifier] so an outside/center border can
+ *  extend past the edge. */
+private fun Modifier.webBorder(width: Int, color: Color, position: WebBorderPosition, corners: WebCornerRadius): Modifier =
+    this.drawWithContent {
+        drawContent()
+        if (width <= 0) return@drawWithContent
+        val w = width.dp.toPx()
+        // (outerInset, innerInset): the border band is [outerInset, innerInset] from the bounds edge.
+        val outerInset: Float
+        val innerInset: Float
+        when (position) {
+            WebBorderPosition.INSIDE -> { outerInset = 0f; innerInset = w }
+            WebBorderPosition.OUTSIDE -> { outerInset = -w; innerInset = 0f }
+            WebBorderPosition.CENTER -> { outerInset = -w / 2f; innerInset = w / 2f }
+        }
+        fun ringRect(inset: Float): RoundRect {
+            // Corner radius tracks the inset: radius = declared radius − inset (outset grows it).
+            fun c(corner: WebCorner) = CornerRadius(
+                (corner.x.dp.toPx() - inset).coerceAtLeast(0f),
+                (corner.y.dp.toPx() - inset).coerceAtLeast(0f)
+            )
+            return RoundRect(
+                left = inset, top = inset, right = size.width - inset, bottom = size.height - inset,
+                topLeftCornerRadius = c(corners.topLeft), topRightCornerRadius = c(corners.topRight),
+                bottomRightCornerRadius = c(corners.bottomRight), bottomLeftCornerRadius = c(corners.bottomLeft)
+            )
+        }
+        val ring = Path().apply {
+            addRoundRect(ringRect(outerInset))
+            addRoundRect(ringRect(innerInset))
+            fillType = PathFillType.EvenOdd // outer fill with an inner hole = the border band
+        }
+        drawPath(path = ring, color = color)
+    }
+
 private fun WebModifier.toModifier(id: String, selectedId: String?, lockedId: String?): Modifier {
+    val corners = effectiveCorners(0)
+    val shape = webCornerShape(corners)
     var m = sizing()
     opacity?.let { m = m.alpha((it.coerceIn(0, 100)) / 100f) }
-    val shape = cornerRadius?.let { RoundedCornerShape(it.dp) }
-    if (shape != null) m = m.clip(shape)
-    backgroundColor?.let { hex -> parseHex(hex)?.let { c -> m = m.background(c) } }
-    borderWidth?.let { w ->
-        val bc = parseHex(borderColor) ?: Color.Black
-        m = if (shape != null) m.border(w.dp, bc, shape) else m.border(w.dp, bc)
-    }
+    // Border is applied before background/clip so its draw runs outside the corner clip — an
+    // outside/center border can extend past the box edge, matching the CSS (see CssEmitter).
+    borderWidth?.let { w -> m = m.webBorder(w, parseHex(borderColor) ?: Color.Black, borderPosition, corners) }
+    backgroundColor?.let { hex -> parseHex(hex)?.let { c -> m = m.background(c, shape) } }
+    if (!corners.isZero()) m = m.clip(shape)
     padding?.let { m = m.padding(it.dp) }
     return m.selectable(id, selectedId, lockedId)
 }

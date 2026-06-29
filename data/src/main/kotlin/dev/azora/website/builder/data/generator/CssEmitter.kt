@@ -98,8 +98,25 @@ object CssEmitter {
         m.fontSize?.let { out += "font-size: ${it}px" }
         if (m.fontWeight != WebFontWeight.NORMAL) out += "font-weight: ${fontWeight(m.fontWeight)}"
         if (m.textAlign != WebTextAlign.START) out += "text-align: ${textAlign(m.textAlign)}"
-        m.cornerRadius?.let { out += "border-radius: ${it}px" }
-        m.borderWidth?.let { w -> out += "border: ${w}px solid ${color(m.borderColor) ?: "#000000"}" }
+        // Border radius — per-corner elliptical ([WebModifier.corners]) or legacy uniform ([WebModifier.cornerRadius]).
+        val corners = m.corners ?: m.cornerRadius?.let { WebCornerRadius.uniform(it) }
+        if (corners != null && !corners.isZero()) {
+            out += "border-radius: ${corners.topLeft.x}px ${corners.topRight.x}px ${corners.bottomRight.x}px ${corners.bottomLeft.x}px" +
+                " / ${corners.topLeft.y}px ${corners.topRight.y}px ${corners.bottomRight.y}px ${corners.bottomLeft.y}px"
+        }
+        // Border — drawn inside/outside/center relative to the box edge.
+        m.borderWidth?.let { w ->
+            val c = color(m.borderColor) ?: "#000000"
+            when (m.borderPosition) {
+                WebBorderPosition.INSIDE -> { out += "box-sizing: border-box"; out += "border: ${w}px solid $c" }
+                WebBorderPosition.OUTSIDE -> { out += "box-sizing: content-box"; out += "border: ${w}px solid $c" }
+                WebBorderPosition.CENTER -> {
+                    val inner = (w + 1) / 2 // ceil(w/2): inside half
+                    val outer = w / 2        // floor(w/2): outside half
+                    out += "box-shadow: inset 0 0 0 ${inner}px $c, 0 0 0 ${outer}px $c"
+                }
+            }
+        }
         m.opacity?.let { out += "opacity: ${(it.coerceIn(0, 100)) / 100.0}" }
         return out
     }

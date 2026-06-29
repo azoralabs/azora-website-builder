@@ -40,7 +40,9 @@ object WebSceneFiles {
     const val COMPONENTS_DIR = "components"
     const val GENERATED_DIR = "generated"
     const val EXT = ".azn"
-    const val CONFIG_FILE = "website$EXT"
+    const val CONFIG_FILE = "WebsiteConfig$EXT"
+    /** Legacy config file name (pre-rename) — still read as a fallback. */
+    const val CONFIG_FILE_LEGACY = "website$EXT"
 
     val json = Json {
         ignoreUnknownKeys = true
@@ -68,7 +70,7 @@ object WebSceneFiles {
     /** Absolute paths of every `.azscene` file anywhere under the project (folders are conventional,
      *  not enforced). Descends manually so heavy/build dirs (`generated/`, `node_modules`, `build`,
      *  `.git`, …) are pruned before being listed — important because this runs on a poll. */
-    private suspend fun listAllAzscenePaths(fs: FileSystem, projectPath: String): List<String> {
+    suspend fun listAllAzscenePaths(fs: FileSystem, projectPath: String): List<String> {
         val out = mutableListOf<String>()
         val skipDirs = setOf(GENERATED_DIR, "node_modules", "build", ".git", ".gradle", ".idea")
         suspend fun walk(dir: String) {
@@ -167,7 +169,12 @@ object WebSceneFiles {
         fs.writeToFile(path, json.encodeToString(doc))
     }
 
-    suspend fun readConfig(fs: FileSystem, projectPath: String) = read(fs, configPath(projectPath))
+    /** Reads the config doc from the new `WebsiteConfig.azn`, falling back to the legacy `website.azn`
+     *  for projects created before the rename. */
+    suspend fun readConfig(fs: FileSystem, projectPath: String): WebSceneDoc? {
+        read(fs, configPath(projectPath))?.let { return it }
+        return read(fs, "$projectPath/$CONFIG_FILE_LEGACY")
+    }
     suspend fun writePage(fs: FileSystem, projectPath: String, name: String, doc: WebSceneDoc) =
         write(fs, pagePath(projectPath, name), doc)
     suspend fun writeComponent(fs: FileSystem, projectPath: String, name: String, doc: WebSceneDoc) =
@@ -184,6 +191,11 @@ object WebSceneFiles {
     suspend fun loadComponents(fs: FileSystem, projectPath: String): List<WebSceneDoc> =
         listAllAzscenePaths(fs, projectPath).mapNotNull { read(fs, it) }
             .filter { it.type == WebSceneType.COMPONENT }
+
+    /** Every NAVIGATION document in the project (the site's nav-bar definition). */
+    suspend fun loadNavigation(fs: FileSystem, projectPath: String): List<WebSceneDoc> =
+        listAllAzscenePaths(fs, projectPath).mapNotNull { read(fs, it) }
+            .filter { it.type == WebSceneType.NAVIGATION }
 
     /** Absolute path of the COMPONENT document identified by [name] (its in-doc name or file base
      *  name), wherever it lives in the project — components are discovered by scanning, not by their

@@ -1,5 +1,7 @@
 package dev.azora.website.builder.data.generator
 
+import dev.azora.website.builder.domain.NavLink
+
 /** A page's routing info used to build the router in `App.jsx`. */
 data class RoutePage(val componentName: String, val route: String, val isHome: Boolean)
 
@@ -50,7 +52,7 @@ object ReactProjectFiles {
         write("})")
     }
 
-    fun indexHtml(title: String): String = buildSource {
+    fun indexHtml(title: String, description: String = "", themeColor: String = ""): String = buildSource {
         write("<!doctype html>")
         write("<html lang=\"en\">")
         gen {
@@ -59,6 +61,8 @@ object ReactProjectFiles {
                 write("<meta charset=\"UTF-8\" />")
                 write("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />")
                 write("<title>${title.ifBlank { "Azora Site" }}</title>")
+                if (description.isNotBlank()) write("<meta name=\"description\" content=\"$description\" />")
+                if (themeColor.isNotBlank()) write("<meta name=\"theme-color\" content=\"$themeColor\" />")
             }
             write("</head>")
             write("<body>")
@@ -121,14 +125,28 @@ object ReactProjectFiles {
     }
 
     /** `App.jsx` wiring react-router routes from the project's pages. */
-    fun appJsx(pages: List<RoutePage>): String = buildSource {
-        write("import { Routes, Route } from 'react-router-dom'")
+    fun appJsx(pages: List<RoutePage>, nav: List<NavLink> = emptyList()): String = buildSource {
+        val hasNav = nav.isNotEmpty()
+        if (hasNav) write("import { Routes, Route, Link } from 'react-router-dom'")
+        else write("import { Routes, Route } from 'react-router-dom'")
         pages.forEach { write("import ${it.componentName} from './pages/${it.componentName}.jsx'") }
         blank()
         write("export default function App() {")
         gen {
             write("return (")
             gen {
+                if (hasNav) {
+                    write("<nav style=\"{display:'flex',gap:'16px',padding:'12px 24px',borderBottom:'1px solid #e5e7eb'}\">")
+                    gen {
+                        nav.forEach { item ->
+                            if (item.route.startsWith("http"))
+                                write("<a href=\"${item.route}\" target=\"_blank\" rel=\"noopener noreferrer\">${item.label}</a>")
+                            else
+                                write("<Link to=\"${item.route}\">${item.label}</Link>")
+                        }
+                    }
+                    write("</nav>")
+                }
                 write("<Routes>")
                 gen { pages.forEach { write("<Route path=\"${it.route}\" element={<${it.componentName} />} />") } }
                 write("</Routes>")

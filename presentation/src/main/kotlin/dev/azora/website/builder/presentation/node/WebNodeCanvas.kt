@@ -18,6 +18,7 @@ import dev.azora.canvas.domain.type.AzoraNodeType
 import dev.azora.canvas.domain.type.AzoraPortType
 import dev.azora.canvas.presentation.canvas.AzoraEditorCanvas
 import dev.azora.canvas.presentation.data.AzoraDrawableLink
+import dev.azora.canvas.domain.model.AzoraReroutePointModel
 import dev.azora.canvas.presentation.node.AzoraInputPortDef
 import dev.azora.canvas.presentation.node.AzoraNode
 import dev.azora.canvas.presentation.node.AzoraOutputPortDef
@@ -26,6 +27,8 @@ import dev.azora.canvas.presentation.node.OutputPortsWrapper
 import dev.azora.canvas.presentation.state.AzoraCanvasAction
 import dev.azora.canvas.presentation.state.AzoraCanvasStateHolder
 import dev.azora.sdk.core.theme.palette.AzoraPalette
+import dev.azora.website.builder.domain.WebReroutePoint
+import dev.azora.website.builder.domain.randomSlotId
 
 data class WebPort(val id: String, val label: String, val color: Color)
 
@@ -46,7 +49,9 @@ data class WebNodeLink(
     val fromNodeId: String,
     val fromPortId: String,
     val toNodeId: String,
-    val color: Color
+    val color: Color,
+    /** Waypoints on this link (bend the connection); canvas-local (pre-pan) like node positions. */
+    val reroutePoints: List<WebReroutePoint> = emptyList()
 )
 
 /**
@@ -77,12 +82,19 @@ fun WebNodeCanvas(
     contextMenu: @Composable (screenPos: Offset, worldPos: Offset, onDismiss: () -> Unit) -> Unit = { _, _, _ -> },
     onAddSlot: (nodeId: String) -> Unit = {},
     nodeContextMenu: @Composable (nodeId: String, screenPos: Offset, onDismiss: () -> Unit) -> Unit = { _, _, _ -> },
-    portContextMenu: @Composable (nodeId: String, portIndex: Int, screenPos: Offset, onDismiss: () -> Unit) -> Unit = { _, _, _, _ -> }
+    portContextMenu: @Composable (nodeId: String, portIndex: Int, screenPos: Offset, onDismiss: () -> Unit) -> Unit = { _, _, _, _ -> },
+    onRerouteAdded: (containerId: String, slotId: String, point: WebReroutePoint, insertIndex: Int) -> Unit = { _, _, _, _ -> },
+    onRerouteRemoved: (containerId: String, slotId: String, rerouteId: String) -> Unit = { _, _, _ -> },
+    onRerouteMoved: (containerId: String, slotId: String, rerouteId: String, dx: Float, dy: Float) -> Unit = { _, _, _, _, _ -> }
 ) {
     val nodesRef = rememberUpdatedState(nodes)
+    val linksRef = rememberUpdatedState(links)
     val onLinkRef = rememberUpdatedState(onLink)
     val onNodeMoveRef = rememberUpdatedState(onNodeMove)
     val onNodeMoveEndRef = rememberUpdatedState(onNodeMoveEnd)
+    val onRerouteAddedRef = rememberUpdatedState(onRerouteAdded)
+    val onRerouteRemovedRef = rememberUpdatedState(onRerouteRemoved)
+    val onRerouteMovedRef = rememberUpdatedState(onRerouteMoved)
 
     val stateHolder = remember {
         AzoraCanvasStateHolder(
@@ -92,7 +104,22 @@ fun WebNodeCanvas(
                 onLinkRef.value(sourceId, portId, targetId)
             },
             onNodePositionChanged = { nodeId, position -> onNodeMoveRef.value(nodeId, position) },
-            onNodeDragEnded = { onNodeMoveEndRef.value() }
+            onNodeDragEnded = { onNodeMoveEndRef.value() },
+            // Map the SDK's link-keyed reroute callbacks onto the (containerId, slotId) of the link's
+            // source slot, so the host can store waypoints on that slot. Reads linksRef so a changing
+            // link list doesn't go stale inside the remembered holder.
+            onReroutePointAdded = { linkId, position, insertIndex ->
+                val link = linksRef.value.firstOrNull { it.id == linkId } ?: return@AzoraCanvasStateHolder
+                onRerouteAddedRef.value(link.fromNodeId, link.fromPortId, WebReroutePoint(randomSlotId(), position.x, position.y), insertIndex)
+            },
+            onReroutePointDeleted = { linkId, rerouteId ->
+                val link = linksRef.value.firstOrNull { it.id == linkId } ?: return@AzoraCanvasStateHolder
+                onRerouteRemovedRef.value(link.fromNodeId, link.fromPortId, rerouteId)
+            },
+            onReroutePointPositionChanged = { linkId, rerouteId, delta ->
+                val link = linksRef.value.firstOrNull { it.id == linkId } ?: return@AzoraCanvasStateHolder
+                onRerouteMovedRef.value(link.fromNodeId, link.fromPortId, rerouteId, delta.x, delta.y)
+            }
         )
     }
     val canvasState by stateHolder.state.collectAsState()
@@ -138,7 +165,8 @@ fun WebNodeCanvas(
                 id = link.id, sourceNodeId = source.id, targetNodeId = target.id,
                 startPosition = Offset(source.position.x + canvasState.panOffset.x + outOffset.x, source.position.y + canvasState.panOffset.y + outOffset.y),
                 endPosition = Offset(target.position.x + canvasState.panOffset.x + inOffset.x, target.position.y + canvasState.panOffset.y + inOffset.y),
-                portType = portTypeForColor(link.color), outputPortIndex = outputIndex, startColor = link.color, endColor = link.color
+                portType = portTypeForColor(link.color), outputPortIndex = outputIndex, startColor = link.color, endColor = link.color,
+                reroutePoints = link.reroutePoints.map { AzoraReroutePointModel(it.id, it.x, it.y) }
             )
         }
     }
