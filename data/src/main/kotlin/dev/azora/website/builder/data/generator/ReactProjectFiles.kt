@@ -135,8 +135,9 @@ object ReactProjectFiles {
         gen {
             write("return (")
             gen {
+                write("<>")
                 if (hasNav) {
-                    write("<nav style=\"{display:'flex',gap:'16px',padding:'12px 24px',borderBottom:'1px solid #e5e7eb'}\">")
+                    write("<nav style={{display:'flex',gap:'16px',padding:'12px 24px',borderBottom:'1px solid #e5e7eb'}}>")
                     gen {
                         nav.forEach { item ->
                             if (item.route.startsWith("http"))
@@ -150,6 +151,7 @@ object ReactProjectFiles {
                 write("<Routes>")
                 gen { pages.forEach { write("<Route path=\"${it.route}\" element={<${it.componentName} />} />") } }
                 write("</Routes>")
+                write("</>")
             }
             write(")")
         }

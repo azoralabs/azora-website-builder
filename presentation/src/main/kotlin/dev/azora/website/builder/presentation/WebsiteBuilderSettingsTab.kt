@@ -28,10 +28,21 @@ fun WebsiteBuilderSettingsTab(context: PluginContext) {
 
     var configPath by remember(context.project) { mutableStateOf(WebsiteConfig.configPath(context.project) ?: "") }
     var navPath by remember(context.project) { mutableStateOf(WebsiteConfig.navPath(context.project) ?: "") }
-    var allAznFiles by remember { mutableStateOf<List<String>>(emptyList()) }
+    var configCandidates by remember { mutableStateOf<List<String>>(emptyList()) }
+    var navCandidates by remember { mutableStateOf<List<String>>(emptyList()) }
 
     LaunchedEffect(projectPath) {
-        allAznFiles = WebSceneFiles.listAllAzscenePaths(fs, projectPath)
+        configCandidates = WebSceneFiles.configFilePaths(fs, projectPath)
+        navCandidates = WebSceneFiles.navigationFilePaths(fs, projectPath)
+        // Default to the first candidate if not explicitly set in project extras.
+        if (configPath.isBlank() && configCandidates.isNotEmpty()) {
+            configPath = configCandidates.first()
+            context.saveProject(WebsiteConfig.withConfigPath(context.project, configPath))
+        }
+        if (navPath.isBlank() && navCandidates.isNotEmpty()) {
+            navPath = navCandidates.first()
+            context.saveProject(WebsiteConfig.withNavPath(context.project, navPath))
+        }
     }
 
     fun saveConfig(path: String) {
@@ -51,16 +62,9 @@ fun WebsiteBuilderSettingsTab(context: PluginContext) {
         FilePickerRow(
             label = "Config file (.azn)",
             currentPath = configPath,
-            candidates = allAznFiles,
+            candidates = configCandidates,
             onChange = ::saveConfig,
             onOpen = { if (configPath.isNotBlank()) context.openScene(configPath) }
-        )
-        FilePickerRow(
-            label = "Navigation file (.azn)",
-            currentPath = navPath,
-            candidates = allAznFiles,
-            onChange = ::saveNav,
-            onOpen = { if (navPath.isNotBlank()) context.openScene(navPath) }
         )
     }
 }

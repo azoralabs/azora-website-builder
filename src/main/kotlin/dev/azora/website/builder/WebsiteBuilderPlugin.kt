@@ -150,7 +150,10 @@ class WebsiteBuilderPlugin : AzoraPlugin {
             // Site config scene (WebsiteConfig.azn), created once.
             if (WebSceneFiles.readConfig(fileSystem, projectPath) == null) {
                 WebSceneFiles.writeConfig(fileSystem, projectPath, WebSceneDoc(type = WebSceneType.CONFIG, name = "WebsiteConfig",
-                    settings = mapOf("title" to brand, "description" to "Built with Azora Studio", "themeColor" to "#D14EEA")))
+                    settings = mapOf(
+                        "title" to brand, "description" to "Built with Azora Studio", "themeColor" to "#D14EEA",
+                        "navFile" to "WebsiteNavigation${WebSceneFiles.EXT}"
+                    )))
             }
 
             // Navigation scene (WebsiteNavigation.azn), created once with Home/About/Contact entries.

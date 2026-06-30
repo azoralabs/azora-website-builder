@@ -197,6 +197,14 @@ object WebSceneFiles {
         listAllAzscenePaths(fs, projectPath).mapNotNull { read(fs, it) }
             .filter { it.type == WebSceneType.NAVIGATION }
 
+    /** File paths of NAVIGATION-type `.azn` documents only — for the nav-file picker dropdown. */
+    suspend fun navigationFilePaths(fs: FileSystem, projectPath: String): List<String> =
+        listAllAzscenePaths(fs, projectPath).filter { path -> read(fs, path)?.type == WebSceneType.NAVIGATION }
+
+    /** File paths of CONFIG-type `.azn` documents only — for the config-file picker dropdown. */
+    suspend fun configFilePaths(fs: FileSystem, projectPath: String): List<String> =
+        listAllAzscenePaths(fs, projectPath).filter { path -> read(fs, path)?.type == WebSceneType.CONFIG }
+
     /** Absolute path of the COMPONENT document identified by [name] (its in-doc name or file base
      *  name), wherever it lives in the project — components are discovered by scanning, not by their
      *  folder, so the conventional `components/<name>.azn` may not be where it actually is. Null if

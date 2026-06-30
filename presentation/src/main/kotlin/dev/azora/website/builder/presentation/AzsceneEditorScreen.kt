@@ -158,12 +158,11 @@ private fun ConfigForm(
     fun put(key: String, value: String) = onChange(doc.copy(settings = doc.settings + (key to value)))
 
     // Nav-file picker state (needs PluginContext for the file system + project extras).
-    var allAzn by remember { mutableStateOf<List<String>>(emptyList()) }
-    var navPath by remember { mutableStateOf(context?.let { WebsiteConfig.navPath(it.project) } ?: "") }
+    var navCandidates by remember { mutableStateOf<List<String>>(emptyList()) }
     var navExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(context?.projectPath) {
-        context?.let { allAzn = WebSceneFiles.listAllAzscenePaths(it.fileSystem, it.projectPath) }
+        context?.let { navCandidates = WebSceneFiles.navigationFilePaths(it.fileSystem, it.projectPath) }
     }
 
     Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -177,7 +176,7 @@ private fun ConfigForm(
             Text("Navigation file", color = palette.onSurfaceVariant, fontSize = 12.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
-                    value = navPath.substringAfterLast('/').ifBlank { "— not set —" },
+                    value = setting("navFile").ifBlank { "— not set —" },
                     onValueChange = {},
                     readOnly = true,
                     modifier = Modifier.weight(1f),
@@ -185,12 +184,11 @@ private fun ConfigForm(
                         Box {
                             TextButton(onClick = { navExpanded = true }) { Text("Browse…", fontSize = 11.sp) }
                             DropdownMenu(expanded = navExpanded, onDismissRequest = { navExpanded = false }) {
-                                allAzn.forEach { path ->
+                                navCandidates.forEach { path ->
                                     DropdownMenuItem(
                                         text = { Text(path.substringAfterLast('/'), fontSize = 12.sp) },
                                         onClick = {
-                                            navPath = path
-                                            context.saveProject(WebsiteConfig.withNavPath(context.project, path))
+                                            put("navFile", path.substringAfterLast('/'))
                                             navExpanded = false
                                         }
                                     )
@@ -200,7 +198,13 @@ private fun ConfigForm(
                     },
                     textStyle = TextStyle(fontSize = 12.sp)
                 )
-                TextButton(onClick = { if (navPath.isNotBlank()) context.openScene(navPath) }, enabled = navPath.isNotBlank()) {
+                TextButton(onClick = {
+                    val name = setting("navFile")
+                    if (name.isNotBlank() && context != null) {
+                        val fullPath = navCandidates.firstOrNull { it.endsWith(name) }
+                        if (fullPath != null) context.openScene(fullPath)
+                    }
+                }, enabled = setting("navFile").isNotBlank()) {
                     Text("Open", fontSize = 11.sp)
                 }
             }
@@ -211,11 +215,11 @@ private fun ConfigForm(
 }
 
 /**
- * Full navigation node editor: a two-pane layout.
- * - **Canvas (left):** visual graph — drag from "Site Navigation" to a page node to add a nav entry;
- *   right-click a page node → "Remove from nav" (if linked).
- * - **Inspector (right):** ordered nav list with editable label/route, reorder (▲▼), remove (×), and
- *   an "Add custom route" button for entries that don't map to a page (e.g. /blog, external links).
+ * Full navigation node editor — everything via the canvas:
+ * - **Right-click empty canvas → "New route"** creates a route node.
+ * - **Right-click a route node → "Duplicate" / "Delete"**.
+ * - **Drag from "Site Navigation" to a page** creates a route linked to that page.
+ * - **Click a route node → properties panel** (right) shows only that route's editable label + route.
  */
 @Composable
 private fun ConfigNavEditor(
@@ -225,72 +229,125 @@ private fun ConfigNavEditor(
     modifier: Modifier = Modifier
 ) {
     val entryId = "__nav__"
-    var selected by remember { mutableStateOf<String?>(null) }
-    val localPositions = remember { mutableStateMapOf<String, Offset>() }
     val palette = MaterialTheme.colorScheme
+    var selected by remember { mutableStateOf<String?>(null) }
+    var selectedNavIndex by remember { mutableStateOf<Int?>(null) }
+    val localPositions = remember { mutableStateMapOf<String, Offset>() }
 
+    fun nodeId(route: String) = "nav_entry_$route"
     fun pos(id: String): Offset =
         localPositions[id] ?: doc.positions[id]?.let { Offset(it.x, it.y) }
-            ?: if (id == entryId) Offset(40f, 160f) else Offset(360f, 40f + pages.indexOfFirst { it.route == id } * 96f)
+            ?: if (id == entryId) Offset(40f, 200f) else Offset(320f, 60f + doc.nav.indexOfFirst { nodeId(it.route) == id } * 110f)
 
     fun updateNav(newNav: List<NavLink>) = onChange(doc.copy(nav = newNav))
+    fun persistPositions() = onChange(doc.copy(positions = doc.positions + localPositions.mapValues { CanvasPoint(it.value.x, it.value.y) }))
+
+    // Sync canvas selection → nav index
+    fun selectNode(nodeId: String?) {
+        selected = nodeId
+        selectedNavIndex = nodeId?.let { nid -> doc.nav.indexOfFirst { nodeId(it.route) == nid }.takeIf { it >= 0 } }
+    }
 
     val navNode = WebNode(
-        id = entryId, position = pos(entryId), title = "Site Navigation", subtitle = "${doc.nav.size} item(s)",
+        id = entryId, position = pos(entryId), title = "Site Navigation", subtitle = "${doc.nav.size} route(s)",
         accent = dev.azora.sdk.core.theme.palette.AzoraPalette.AccentOrange, hasInput = false,
         outputs = listOf(WebPort("nav", "nav", dev.azora.sdk.core.theme.palette.AzoraPalette.AccentOrange))
     )
-    val pageNodes = pages.map { p ->
-        WebNode(id = p.route, position = pos(p.route), title = p.name.ifBlank { p.route }, subtitle = p.route,
-            accent = dev.azora.sdk.core.theme.palette.AzoraPalette.AccentBlue, hasInput = true)
+    val routeNodes = doc.nav.map { entry ->
+        WebNode(
+            id = nodeId(entry.route), position = pos(nodeId(entry.route)),
+            title = entry.label.ifBlank { entry.route }, subtitle = entry.route,
+            accent = dev.azora.sdk.core.theme.palette.AzoraPalette.AccentPurple, hasInput = true
+        )
     }
-    val links = doc.nav.mapNotNull { item ->
-        pages.firstOrNull { it.route == item.route }
-            ?.let { WebNodeLink("nav:${item.route}", entryId, "nav", it.route, dev.azora.sdk.core.theme.palette.AzoraPalette.AccentOrange) }
+    val links = doc.nav.map { entry ->
+        WebNodeLink("nav:${entry.route}", entryId, "nav", nodeId(entry.route), dev.azora.sdk.core.theme.palette.AzoraPalette.AccentOrange.copy(alpha = 0.7f))
     }
 
     Row(modifier) {
+        // --- Canvas ---
         WebNodeCanvas(
             modifier = Modifier.weight(1f),
-            nodes = listOf(navNode) + pageNodes, links = links, selectedNodeId = selected,
-            onSelect = { selected = it },
-            onLink = { sourceId, _, targetRoute ->
-                if (sourceId == entryId && doc.nav.none { it.route == targetRoute })
-                    pages.firstOrNull { it.route == targetRoute }?.let { p ->
-                        updateNav(doc.nav + NavLink(p.name.ifBlank { p.route }, p.route))
-                    }
+            nodes = listOf(navNode) + routeNodes, links = links, selectedNodeId = selected,
+            onSelect = { selectNode(it) },
+            onLink = { _, _, _ -> },
+            // Right-click empty canvas → New route
+            contextMenu = { screenPos, worldPos, onDismiss ->
+                NodeContextMenu(
+                    position = screenPos,
+                    items = listOf(NodeMenuItem("New route") {
+                        val entry = NavLink("New Route", "/new-route-${doc.nav.size + 1}")
+                        localPositions[nodeId(entry.route)] = worldPos
+                        updateNav(doc.nav + entry)
+                        selectNode(nodeId(entry.route))
+                        onDismiss()
+                    }),
+                    onDismiss = onDismiss
+                )
             },
+            // Right-click a route node → Duplicate / Delete
             nodeContextMenu = { nodeId, screenPos, onDismiss ->
-                if (nodeId != entryId && doc.nav.any { it.route == nodeId }) {
-                    NodeContextMenu(position = screenPos,
-                        items = listOf(NodeMenuItem("Remove from nav", color = dev.azora.sdk.core.theme.palette.AzoraPalette.AccentRed) {
-                            updateNav(doc.nav.filterNot { it.route == nodeId }); onDismiss()
-                        }), onDismiss = onDismiss)
+                val idx = doc.nav.indexOfFirst { nodeId(it.route) == nodeId }
+                if (idx >= 0) {
+                    NodeContextMenu(
+                        position = screenPos,
+                        items = listOf(
+                            NodeMenuItem("Duplicate") {
+                                val entry = doc.nav[idx]
+                                updateNav(doc.nav.toMutableList().also { it.add(idx + 1, NavLink("${entry.label} (copy)", "${entry.route}_copy")) })
+                                onDismiss()
+                            },
+                            NodeMenuItem("Delete", color = dev.azora.sdk.core.theme.palette.AzoraPalette.AccentRed) {
+                                updateNav(doc.nav.filterIndexed { i, _ -> i != idx })
+                                selectNode(null)
+                                onDismiss()
+                            }
+                        ),
+                        onDismiss = onDismiss
+                    )
                 } else onDismiss()
             },
             onNodeMove = { id, p -> localPositions[id] = p },
-            onNodeMoveEnd = {
-                onChange(doc.copy(positions = doc.positions + localPositions.mapValues { CanvasPoint(it.value.x, it.value.y) }))
-            }
+            onNodeMoveEnd = { persistPositions() }
         )
-        // --- inspector: ordered nav list with full CRUD ---
-        Column(Modifier.width(300.dp).fillMaxHeight().background(palette.surface).padding(12.dp)
-            .verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Navigation entries", color = palette.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            if (doc.nav.isEmpty()) Text("No entries. Drag from the nav node to a page, or add a custom route below.",
-                color = palette.onSurface.copy(alpha = 0.6f), fontSize = 11.sp)
-            doc.nav.forEachIndexed { i, entry ->
-                NavEntryRow(entry, i, doc.nav.lastIndex,
-                    onEdit = { label, route -> updateNav(doc.nav.mapIndexed { j, e -> if (j == i) NavLink(label, route) else e }) },
-                    onMove = { delta ->
-                        val ni = (i + delta).coerceIn(0, doc.nav.lastIndex)
-                        if (ni != i) { val l = doc.nav.toMutableList(); l.add(ni, l.removeAt(i)); updateNav(l) }
-                    },
-                    onRemove = { updateNav(doc.nav.filterNot { it.route == entry.route }) }
+
+        // --- Properties panel: only the selected route ---
+        Column(Modifier.width(286.dp).fillMaxHeight().background(palette.surface).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            val idx = selectedNavIndex
+            if (idx != null && idx < doc.nav.size) {
+                val entry = doc.nav[idx]
+                val external = entry.route.startsWith("http")
+                Text("Route properties", color = palette.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                OutlinedTextField(
+                    value = entry.label, onValueChange = { newLabel ->
+                        updateNav(doc.nav.mapIndexed { j, e -> if (j == idx) NavLink(newLabel, e.route) else e })
+                    }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    textStyle = TextStyle(fontSize = 13.sp)
                 )
-            }
-            OutlinedButton(onClick = { updateNav(doc.nav + NavLink("New Link", "/new")) }, modifier = Modifier.fillMaxWidth()) {
-                Text("+ Add custom route", fontSize = 11.sp)
+                OutlinedTextField(
+                    value = entry.route, onValueChange = { newRoute ->
+                        updateNav(doc.nav.mapIndexed { j, e -> if (j == idx) NavLink(e.label, newRoute) else e })
+                    }, label = { Text(if (external) "URL (external)" else "Route") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 13.sp)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        val ni = (idx - 1).coerceAtLeast(0)
+                        if (ni != idx) { val l = doc.nav.toMutableList(); l.add(ni, l.removeAt(idx)); updateNav(l); selectedNavIndex = ni }
+                    }, enabled = idx > 0) { Text("▲") }
+                    OutlinedButton(onClick = {
+                        val ni = (idx + 1).coerceAtMost(doc.nav.lastIndex)
+                        if (ni != idx) { val l = doc.nav.toMutableList(); l.add(ni, l.removeAt(idx)); updateNav(l); selectedNavIndex = ni }
+                    }, enabled = idx < doc.nav.lastIndex) { Text("▼") }
+                }
+                TextButton(onClick = {
+                    updateNav(doc.nav.filterIndexed { i, _ -> i != idx }); selectNode(null)
+                }) { Text("Delete route", color = palette.error) }
+            } else {
+                Text("No route selected", color = palette.onSurfaceVariant, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text("Right-click the canvas → New route.\nClick a route node to edit it.",
+                    color = palette.onSurface.copy(alpha = 0.5f), fontSize = 11.sp)
             }
         }
     }
