@@ -10,6 +10,7 @@ dependencies {
     compileOnly("dev.azora:azora-sdk-plugin-core:0.1.0")
     compileOnly("dev.azora:azora-sdk-core-project-domain:0.1.0")
     compileOnly("dev.azora:azora-sdk-core-domain:0.1.0")
+    compileOnly("dev.azora:azora-sdk-core-presentation:0.1.0")
     compileOnly("dev.azora:azora-sdk-core-io:0.1.0")
     // SDK node-graph canvas + palette used by the .azscene visual editor.
     compileOnly("dev.azora:azora-sdk-canvas-domain:0.1.0")

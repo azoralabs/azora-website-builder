@@ -1,4 +1,5 @@
 package dev.azora.website.builder.presentation
+import dev.azora.sdk.plugin.core.AbstractPluginUndoRedo
 import dev.azora.website.builder.data.WebSceneFiles
 
 import androidx.compose.foundation.background
@@ -14,6 +15,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -21,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.azora.website.builder.domain.WebColumn
 import dev.azora.sdk.plugin.core.PluginContext
+import dev.azora.canvas.presentation.menu.*
 import dev.azora.website.builder.presentation.node.*
 import dev.azora.website.builder.domain.*
 import kotlinx.coroutines.delay
@@ -46,10 +55,22 @@ fun AzsceneEditorScreen(type: String, filePath: String, context: PluginContext) 
     var pages by remember(filePath) { mutableStateOf<List<WebSceneDoc>>(emptyList()) }
     var dirty by remember(filePath) { mutableStateOf(false) }
 
+    // Undo/redo — registered with the host coordinator so toolbar buttons work (same pattern as
+    // AzoraNodesViewModel).
+    val undoRedo = remember(filePath) { WebSceneUndoRedoProvider(filePath) }
+    val undoFacade = context.undoRedo
+    DisposableEffect(filePath) {
+        undoFacade?.register(undoRedo)
+        undoFacade?.setActive(undoRedo.providerId)
+        onDispose { undoFacade?.unregister(undoRedo.providerId) }
+    }
+
     LaunchedEffect(filePath) {
-        doc = WebSceneFiles.read(fs, filePath)
+        val loaded = WebSceneFiles.read(fs, filePath)
             ?: if (type == WebSceneType.PAGE || type == WebSceneType.COMPONENT) WebSceneDoc.withRoot(type = type, name = baseName)
             else WebSceneDoc(type = type, name = baseName)
+        doc = loaded
+        undoRedo.setCurrent(loaded)
         components = WebSceneFiles.loadComponents(fs, projectPath)
         if (type == WebSceneType.NAVIGATION) {
             pages = WebSceneFiles.loadPages(fs, projectPath)
@@ -81,16 +102,24 @@ fun AzsceneEditorScreen(type: String, filePath: String, context: PluginContext) 
         return
     }
 
-    fun update(next: WebSceneDoc) { doc = next; dirty = true }
+    // Restore callback — invoked by undo/redo to set the doc.
+    undoRedo.onRestoreCb = { restored -> doc = restored; dirty = true }
 
-    /** Applies [transform] to the *latest* doc. Unlike [update], several edits fired in a single
-     *  event compose instead of each branching from a stale snapshot and clobbering the others —
-     *  e.g. inserting a component instance records its name ([onInstance]), its canvas position
-     *  ([onPersistPosition]) and adds its anchor node ([onRootChange]) in one go. */
+    fun update(next: WebSceneDoc) {
+        val prev = doc
+        if (prev != null) undoRedo.pushState(prev)
+        doc = next; dirty = true
+        undoRedo.setCurrent(next)
+        undoFacade?.setActive(undoRedo.providerId)
+    }
+
     fun mutate(transform: (WebSceneDoc) -> WebSceneDoc) {
         val latest = doc ?: return
-        doc = transform(latest)
-        dirty = true
+        undoRedo.pushState(latest)
+        val next = transform(latest)
+        doc = next; dirty = true
+        undoRedo.setCurrent(next)
+        undoFacade?.setActive(undoRedo.providerId)
     }
 
     // Autosave: every edit marks the doc dirty; this debounces writes so a burst of edits collapses
@@ -115,7 +144,17 @@ fun AzsceneEditorScreen(type: String, filePath: String, context: PluginContext) 
     LaunchedEffect(current) { WebSceneBus.publish(current.copy(name = baseName)) }
     DisposableEffect(filePath) { onDispose { WebSceneBus.retract(baseName) } }
 
-    Column(Modifier.fillMaxSize().background(palette.background)) {
+    Column(Modifier.fillMaxSize().background(palette.background)
+        .onPreviewKeyEvent { event ->
+            if (event.type == KeyEventType.KeyDown) {
+                when {
+                    event.isCtrlPressed && event.key == Key.Z && !event.isShiftPressed -> { undoRedo.undo(); true }
+                    event.isCtrlPressed && (event.key == Key.Y || (event.key == Key.Z && event.isShiftPressed)) -> { undoRedo.redo(); true }
+                    else -> false
+                }
+            } else false
+        }
+    ) {
         when (type) {
             WebSceneType.NAVIGATION -> ConfigNavEditor(current, pages, onChange = ::update, modifier = Modifier.weight(1f))
             WebSceneType.CONFIG -> ConfigForm(current, onChange = ::update, context = context, modifier = Modifier.weight(1f))
@@ -373,4 +412,11 @@ private fun NavEntryRow(entry: NavLink, index: Int, lastIndex: Int, onEdit: (Str
         OutlinedTextField(value = label, onValueChange = { label = it; onEdit(it, route) }, label = { Text("Label", fontSize = 10.sp) }, singleLine = true, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 12.sp))
         OutlinedTextField(value = route, onValueChange = { route = it; onEdit(label, it) }, label = { Text(if (external) "URL (external)" else "Route", fontSize = 10.sp) }, singleLine = true, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 12.sp))
     }
+}
+
+/** Undo/redo provider for a website scene — extends the SDK's [AbstractPluginUndoRedo] base. */
+private class WebSceneUndoRedoProvider(filePath: String) : AbstractPluginUndoRedo<WebSceneDoc>() {
+    override val providerId = "website_$filePath"
+    var onRestoreCb: ((WebSceneDoc) -> Unit)? = null
+    override fun onRestore(state: WebSceneDoc) { onRestoreCb?.invoke(state) }
 }

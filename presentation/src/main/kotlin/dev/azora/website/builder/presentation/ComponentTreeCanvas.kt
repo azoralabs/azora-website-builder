@@ -9,6 +9,8 @@ import androidx.compose.ui.graphics.Color
 import dev.azora.website.builder.domain.WebComponent
 import dev.azora.website.builder.domain.WebSpacer
 import dev.azora.sdk.core.theme.palette.AzoraPalette
+import dev.azora.canvas.presentation.menu.*
+import dev.azora.canvas.presentation.util.autoLayout
 import dev.azora.website.builder.presentation.node.*
 import dev.azora.website.builder.domain.CanvasPoint
 import dev.azora.website.builder.domain.WebSceneDoc
@@ -43,7 +45,10 @@ fun ComponentTreeCanvas(
     val localPositions = remember { mutableStateMapOf<String, Offset>() }
     var lastDragged by remember { mutableStateOf<String?>(null) }
 
-    val auto = remember(nodes) { autoLayout(nodes) }
+    val auto = remember(nodes) {
+        val layout = autoLayout(nodes.size)
+        nodes.mapIndexed { i, c -> c.id to (layout[i] ?: Offset.Zero) }.toMap()
+    }
 
     fun pos(id: String): Offset =
         localPositions[id] ?: persistedPositions[id]?.let { Offset(it.x, it.y) } ?: auto[id] ?: Offset.Zero
@@ -92,7 +97,13 @@ fun ComponentTreeCanvas(
             onNodesChange(WebComponentTree.setSlotChild(nodes, sourceId, sourcePortId, targetId))
         },
         onNodeMove = { id, position -> localPositions[id] = position; lastDragged = id },
-        onNodeMoveEnd = { lastDragged?.let { id -> localPositions[id]?.let { onPersistPosition(id, CanvasPoint(it.x, it.y)) } }; lastDragged = null },
+        onNodeMoveEnd = {
+            lastDragged?.let { id ->
+                localPositions[id]?.let { onPersistPosition(id, CanvasPoint(it.x, it.y)) }
+                localPositions.remove(id) // clear so undo/redo can move the node via persistedPositions
+            }
+            lastDragged = null
+        },
         onAddSlot = { containerId -> onNodesChange(WebComponentTree.addSlot(nodes, containerId)) },
         nodeContextMenu = { nodeId, screenPos, onDismiss ->
             NodeContextMenu(
@@ -173,14 +184,6 @@ fun ComponentTreeCanvas(
 }
 
 /** Stagger pool nodes in a grid as a fallback position; persisted/click positions always win. */
-private fun autoLayout(nodes: List<WebComponent>): Map<String, Offset> {
-    val result = LinkedHashMap<String, Offset>()
-    nodes.forEachIndexed { i, c ->
-        result[c.id] = Offset(40f + (i % 4) * 240f, 40f + (i / 4) * 100f)
-    }
-    return result
-}
-
 private fun accentFor(c: WebComponent): Color = when (WebComponentTree.typeLabel(c)) {
     "Column", "Row", "Box" -> AzoraPalette.AccentBlue
     "Text" -> AzoraPalette.AccentTeal

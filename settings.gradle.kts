@@ -18,6 +18,7 @@ includeBuild("../azora-studio") {
         substitute(module("dev.azora:azora-sdk-core-project-domain")).using(project(":azora-sdk-core:project:domain"))
         substitute(module("dev.azora:azora-sdk-core-io")).using(project(":azora-sdk-core:io"))
         substitute(module("dev.azora:azora-sdk-core-domain")).using(project(":azora-sdk-core:domain"))
+        substitute(module("dev.azora:azora-sdk-core-presentation")).using(project(":azora-sdk-core:presentation"))
         substitute(module("dev.azora:azora-sdk-core-theme")).using(project(":azora-sdk-core:theme"))
         substitute(module("dev.azora:azora-sdk-canvas-domain")).using(project(":azora-sdk:canvas:domain"))
         substitute(module("dev.azora:azora-sdk-canvas-presentation")).using(project(":azora-sdk:canvas:presentation"))
