@@ -20,6 +20,8 @@ dependencies {
     compileOnly("dev.azora:azora-sdk-plugin-core:0.1.0")
     compileOnly("dev.azora:azora-sdk-core-project-domain:0.1.0")
     compileOnly("dev.azora:azora-sdk-core-io:0.1.0")
+    compileOnly("dev.azora:azora-sdk-compiler-scene-domain:0.1.0")
+    compileOnly("dev.azora:azora-sdk-compiler-scene-data:0.1.0")
 
     compileOnly("org.jetbrains.compose.runtime:runtime:1.11.1")
     compileOnly("org.jetbrains.compose.foundation:foundation:1.11.1")

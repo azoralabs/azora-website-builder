@@ -3,13 +3,13 @@ package dev.azora.website.builder.data.generator
 import dev.azora.sdk.core.io.FileSystem
 import dev.azora.sdk.core.project.domain.CodeGenerator
 import dev.azora.sdk.core.project.domain.CodeGeneratorImpl
-import dev.azora.website.builder.domain.WebComponent
-import dev.azora.website.builder.domain.WebColumn
-import dev.azora.website.builder.domain.WebRow
-import dev.azora.website.builder.domain.WebBox
-import dev.azora.website.builder.domain.WebButton
-import dev.azora.website.builder.domain.WebSceneDoc
-import dev.azora.website.builder.domain.WebSlot
+import dev.azora.sdk.compiler.scene.domain.SceneComponent
+import dev.azora.sdk.compiler.scene.domain.SceneColumn
+import dev.azora.sdk.compiler.scene.domain.SceneRow
+import dev.azora.sdk.compiler.scene.domain.SceneBox
+import dev.azora.sdk.compiler.scene.domain.SceneButton
+import dev.azora.sdk.compiler.scene.domain.SceneDocument
+import dev.azora.sdk.compiler.scene.domain.SceneSlot
 import dev.azora.website.builder.data.WebSceneFiles
 
 /**
@@ -66,7 +66,7 @@ class ReactSiteGenerator(private val fileSystem: FileSystem) {
     }
 
     /** Builds one `.jsx` module: css import, child-component imports, and the default-exported function. */
-    private fun module(name: String, doc: WebSceneDoc, reactNames: Map<String, String>): String {
+    private fun module(name: String, doc: SceneDocument, reactNames: Map<String, String>): String {
         val pool = doc.nodes.associateBy { it.id }
         val root = pool[doc.rootId]
         val imports = doc.instances.values.toSet().mapNotNull { reactNames[it] }.distinct().sorted()
@@ -89,19 +89,19 @@ class ReactSiteGenerator(private val fileSystem: FileSystem) {
     /** Whether [root]'s reachable graph contains a button node (instances are separate modules that
      *  import [AzButton] themselves), so the module knows to import the AzButton component. `visiting`
      *  guards against cycles. */
-    private fun treeHasButton(root: WebComponent, pool: Map<String, WebComponent>, visiting: Set<String> = emptySet()): Boolean {
+    private fun treeHasButton(root: SceneComponent, pool: Map<String, SceneComponent>, visiting: Set<String> = emptySet()): Boolean {
         if (root.id in visiting) return false
         return when (root) {
-            is WebButton -> true
-            is WebColumn -> root.slots.anySlotChild(pool) { treeHasButton(it, pool, visiting + root.id) }
-            is WebRow -> root.slots.anySlotChild(pool) { treeHasButton(it, pool, visiting + root.id) }
-            is WebBox -> root.slots.anySlotChild(pool) { treeHasButton(it, pool, visiting + root.id) }
+            is SceneButton -> true
+            is SceneColumn -> root.slots.anySlotChild(pool) { treeHasButton(it, pool, visiting + root.id) }
+            is SceneRow -> root.slots.anySlotChild(pool) { treeHasButton(it, pool, visiting + root.id) }
+            is SceneBox -> root.slots.anySlotChild(pool) { treeHasButton(it, pool, visiting + root.id) }
             else -> false
         }
     }
 
     /** True if any occupied slot of this container resolves (via [pool]) to a node satisfying [pred]. */
-    private fun List<WebSlot>.anySlotChild(pool: Map<String, WebComponent>, pred: (WebComponent) -> Boolean): Boolean =
+    private fun List<SceneSlot>.anySlotChild(pool: Map<String, SceneComponent>, pred: (SceneComponent) -> Boolean): Boolean =
         any { s -> s.childId?.let { pool[it] }?.let(pred) == true }
 
     private fun sanitizeAppName(name: String): String =

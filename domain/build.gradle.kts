@@ -4,10 +4,9 @@ plugins {
 }
 
 dependencies {
-    // Website domain models build on the SDK's WebComponent + project model (provided at runtime).
+    // Website scene-type ids + project-extras bridge over the SDK's universal scene model.
+    compileOnly("dev.azora:azora-sdk-compiler-scene-domain:0.1.0")
     compileOnly("dev.azora:azora-sdk-core-project-domain:0.1.0")
-    // Generic slot-graph operations (AzoraSlotGraph) reused by the node editor — pure data module.
-    compileOnly("dev.azora:azora-sdk-canvas-domain:0.1.0")
     compileOnly("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 }
 

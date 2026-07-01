@@ -1,6 +1,6 @@
 package dev.azora.website.builder.data.generator
 
-import dev.azora.website.builder.domain.NavLink
+import dev.azora.sdk.compiler.scene.domain.NavLink
 
 /** A page's routing info used to build the router in `App.jsx`. */
 data class RoutePage(val componentName: String, val route: String, val isHome: Boolean)

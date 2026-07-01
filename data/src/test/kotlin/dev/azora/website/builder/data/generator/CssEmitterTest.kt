@@ -1,17 +1,17 @@
 package dev.azora.website.builder.data.generator
 
-import dev.azora.website.builder.domain.WebArrangement
-import dev.azora.website.builder.domain.WebBorderPosition
-import dev.azora.website.builder.domain.WebButton
-import dev.azora.website.builder.domain.WebBox
-import dev.azora.website.builder.domain.WebColumn
-import dev.azora.website.builder.domain.WebCorner
-import dev.azora.website.builder.domain.WebCornerRadius
-import dev.azora.website.builder.domain.WebFontWeight
-import dev.azora.website.builder.domain.WebModifier
-import dev.azora.website.builder.domain.WebSlot
-import dev.azora.website.builder.domain.WebText
-import dev.azora.website.builder.domain.WebTextAlign
+import dev.azora.sdk.compiler.scene.domain.SceneArrangement
+import dev.azora.sdk.compiler.scene.domain.SceneBorderPosition
+import dev.azora.sdk.compiler.scene.domain.SceneButton
+import dev.azora.sdk.compiler.scene.domain.SceneBox
+import dev.azora.sdk.compiler.scene.domain.SceneColumn
+import dev.azora.sdk.compiler.scene.domain.SceneCorner
+import dev.azora.sdk.compiler.scene.domain.SceneCornerRadius
+import dev.azora.sdk.compiler.scene.domain.SceneFontWeight
+import dev.azora.sdk.compiler.scene.domain.SceneModifier
+import dev.azora.sdk.compiler.scene.domain.SceneSlot
+import dev.azora.sdk.compiler.scene.domain.SceneText
+import dev.azora.sdk.compiler.scene.domain.SceneTextAlign
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -25,10 +25,10 @@ class CssEmitterTest {
 
     @Test
     fun `button height and border win over az-button base via boosted selector`() {
-        val btn = WebButton(
+        val btn = SceneButton(
             id = "c_abc",
             label = "Go",
-            modifier = WebModifier(height = 50, borderWidth = 2, borderColor = "#000000")
+            modifier = SceneModifier(height = 50, borderWidth = 2, borderColor = "#000000")
         )
         val css = CssEmitter.fileCss(btn.id, listOf(btn), emptyMap())
 
@@ -41,7 +41,7 @@ class CssEmitterTest {
 
     @Test
     fun `button jsx carries the per-node className that the css targets`() {
-        val btn = WebButton(id = "c_abc", label = "Go")
+        val btn = SceneButton(id = "c_abc", label = "Go")
         val jsx = buildSource { JsxEmitter.emit(this, btn, mapOf(btn.id to btn), emptyMap(), emptyMap()) }
         // AzButton merges this className with `az-button`, so `.az-button.n_c_abc` matches the element.
         assertTrue("<AzButton className=\"n_c_abc\">" in jsx, "button JSX must carry its class, got:\n$jsx")
@@ -49,11 +49,11 @@ class CssEmitterTest {
 
     @Test
     fun `non-button nodes use the plain per-node selector`() {
-        val text = WebText(id = "c_t", text = "hi", modifier = WebModifier(width = 100))
-        val col = WebColumn(
+        val text = SceneText(id = "c_t", text = "hi", modifier = SceneModifier(width = 100))
+        val col = SceneColumn(
             id = "c_root",
-            modifier = WebModifier(fillMaxWidth = true, padding = 16),
-            slots = listOf(WebSlot(id = "s1", childId = "c_t"))
+            modifier = SceneModifier(fillMaxWidth = true, padding = 16),
+            slots = listOf(SceneSlot(id = "s1", childId = "c_t"))
         )
         val css = CssEmitter.fileCss(col.id, listOf(col, text), emptyMap())
 
@@ -64,7 +64,7 @@ class CssEmitterTest {
 
     @Test
     fun `text and link are inline-block so box modifiers apply`() {
-        val txt = WebText(id = "c_t", text = "hi", modifier = WebModifier(width = 100, padding = 8, backgroundColor = "#FF0000"))
+        val txt = SceneText(id = "c_t", text = "hi", modifier = SceneModifier(width = 100, padding = 8, backgroundColor = "#FF0000"))
         val css = CssEmitter.fileCss(txt.id, listOf(txt), emptyMap())
 
         assertTrue("display: inline-block" in css, "text must be inline-block, got:\n$css")
@@ -73,14 +73,14 @@ class CssEmitterTest {
 
     @Test
     fun `all modifier fields emit when set`() {
-        val col = WebColumn(
+        val col = SceneColumn(
             id = "c_x",
-            arrangement = WebArrangement.CENTER,
-            modifier = WebModifier(
+            arrangement = SceneArrangement.CENTER,
+            modifier = SceneModifier(
                 fillMaxWidth = true, fillMaxHeight = true, width = 10, height = 20, padding = 4, gap = 6,
                 backgroundColor = "#111111", textColor = "#222222", fontSize = 18,
-                fontWeight = WebFontWeight.BOLD,
-                textAlign = WebTextAlign.CENTER,
+                fontWeight = SceneFontWeight.BOLD,
+                textAlign = SceneTextAlign.CENTER,
                 cornerRadius = 7, borderWidth = 3, borderColor = "#333333", opacity = 50
             )
         )
@@ -96,10 +96,10 @@ class CssEmitterTest {
 
     @Test
     fun `a node referenced by multiple slots renders once per reference`() {
-        val reused = WebText(id = "c_hi", text = "hi")
-        val col = WebColumn(
+        val reused = SceneText(id = "c_hi", text = "hi")
+        val col = SceneColumn(
             id = "c_root",
-            slots = listOf(WebSlot(id = "s1", childId = "c_hi"), WebSlot(id = "s2", childId = "c_hi"))
+            slots = listOf(SceneSlot(id = "s1", childId = "c_hi"), SceneSlot(id = "s2", childId = "c_hi"))
         )
         val pool = mapOf(col.id to col, reused.id to reused)
         val jsx = buildSource { JsxEmitter.emit(this, col, pool, emptyMap(), emptyMap()) }
@@ -110,11 +110,11 @@ class CssEmitterTest {
 
     @Test
     fun `per-corner elliptical radius emits the CSS slash form`() {
-        val node = WebBox(
+        val node = SceneBox(
             id = "c_b",
-            modifier = WebModifier(corners = WebCornerRadius(
-                topLeft = WebCorner(2, 4), topRight = WebCorner(0, 0),
-                bottomRight = WebCorner(8, 8), bottomLeft = WebCorner(1, 3)
+            modifier = SceneModifier(corners = SceneCornerRadius(
+                topLeft = SceneCorner(2, 4), topRight = SceneCorner(0, 0),
+                bottomRight = SceneCorner(8, 8), bottomLeft = SceneCorner(1, 3)
             ))
         )
         val css = CssEmitter.fileCss(node.id, listOf(node), emptyMap())
@@ -123,17 +123,17 @@ class CssEmitterTest {
 
     @Test
     fun `legacy uniform cornerRadius still emits a radius`() {
-        val node = WebBox(id = "c_b", modifier = WebModifier(cornerRadius = 6))
+        val node = SceneBox(id = "c_b", modifier = SceneModifier(cornerRadius = 6))
         val css = CssEmitter.fileCss(node.id, listOf(node), emptyMap())
         assertTrue("border-radius: 6px 6px 6px 6px / 6px 6px 6px 6px" in css, "legacy uniform radius should expand to all corners, got:\n$css")
     }
 
     @Test
     fun `border position inside outside center emit expected CSS`() {
-        fun css(pos: WebBorderPosition) = CssEmitter.fileCss("c_b", listOf(WebBox(id = "c_b", modifier = WebModifier(borderWidth = 2, borderColor = "#FF0000", borderPosition = pos))), emptyMap())
-        val inside = css(WebBorderPosition.INSIDE)
-        val outside = css(WebBorderPosition.OUTSIDE)
-        val center = css(WebBorderPosition.CENTER)
+        fun css(pos: SceneBorderPosition) = CssEmitter.fileCss("c_b", listOf(SceneBox(id = "c_b", modifier = SceneModifier(borderWidth = 2, borderColor = "#FF0000", borderPosition = pos))), emptyMap())
+        val inside = css(SceneBorderPosition.INSIDE)
+        val outside = css(SceneBorderPosition.OUTSIDE)
+        val center = css(SceneBorderPosition.CENTER)
         assertTrue("box-sizing: border-box" in inside && "border: 2px solid #FF0000" in inside, "INSIDE → border-box + border, got:\n$inside")
         assertTrue("box-sizing: content-box" in outside && "border: 2px solid #FF0000" in outside, "OUTSIDE → content-box + border, got:\n$outside")
         assertTrue("border:" !in center && "box-shadow: inset 0 0 0 1px #FF0000, 0 0 0 1px #FF0000" in center, "CENTER → box-shadow ring, no border, got:\n$center")
@@ -143,11 +143,11 @@ class CssEmitterTest {
     fun `border plus corner radius emits both so the browser rounds the border`() {
         // A bordered element with a corner radius: CSS `border` + `border-radius` on the same rule →
         // the browser draws a rounded border. (Per-corner + position all on one element.)
-        val node = WebBox(
+        val node = SceneBox(
             id = "c_b",
-            modifier = WebModifier(
-                borderWidth = 3, borderColor = "#00FF00", borderPosition = WebBorderPosition.INSIDE,
-                corners = WebCornerRadius(topLeft = WebCorner(10, 10), topRight = WebCorner(10, 10), bottomRight = WebCorner(10, 10), bottomLeft = WebCorner(10, 10))
+            modifier = SceneModifier(
+                borderWidth = 3, borderColor = "#00FF00", borderPosition = SceneBorderPosition.INSIDE,
+                corners = SceneCornerRadius(topLeft = SceneCorner(10, 10), topRight = SceneCorner(10, 10), bottomRight = SceneCorner(10, 10), bottomLeft = SceneCorner(10, 10))
             )
         )
         val css = CssEmitter.fileCss(node.id, listOf(node), emptyMap())

@@ -1,10 +1,11 @@
 package dev.azora.website.builder.data.generator
 
 import dev.azora.sdk.core.project.domain.CodeGenerator.GenScope
+import dev.azora.sdk.compiler.scene.domain.*
 import dev.azora.website.builder.domain.*
 
 /**
- * Renders a [WebComponent] graph as JSX into a [GenScope]. Containers resolve their ordered [WebSlot]s
+ * Renders a [SceneComponent] graph as JSX into a [GenScope]. Containers resolve their ordered [SceneSlot]s
  * against [pool]; a node referenced by several slots renders once per reference (reuse). `visiting`
  * is a path guard: a node in the current ancestor chain is skipped, so cycles (a slot referencing an
  * ancestor) can't infinite-loop while DAG reuse still renders duplicates.
@@ -18,8 +19,8 @@ object JsxEmitter {
 
     fun emit(
         scope: GenScope,
-        node: WebComponent,
-        pool: Map<String, WebComponent>,
+        node: SceneComponent,
+        pool: Map<String, SceneComponent>,
         instances: Map<String, String>,
         reactNames: Map<String, String>,
         visiting: Set<String> = emptySet()
@@ -33,24 +34,24 @@ object JsxEmitter {
 
         val cls = CssEmitter.cssClass(node.id)
         when (node) {
-            is WebColumn -> container(scope, cls, node.slots, pool, instances, reactNames, visiting + node.id)
-            is WebRow -> container(scope, cls, node.slots, pool, instances, reactNames, visiting + node.id)
-            is WebBox -> container(scope, cls, node.slots, pool, instances, reactNames, visiting + node.id)
-            is WebText -> scope.write("<span className=\"$cls\">{${js(node.text)}}</span>")
+            is SceneColumn -> container(scope, cls, node.slots, pool, instances, reactNames, visiting + node.id)
+            is SceneRow -> container(scope, cls, node.slots, pool, instances, reactNames, visiting + node.id)
+            is SceneBox -> container(scope, cls, node.slots, pool, instances, reactNames, visiting + node.id)
+            is SceneText -> scope.write("<span className=\"$cls\">{${js(node.text)}}</span>")
             // Our custom Button component (AzButton), not a native browser <button>.
-            is WebButton -> scope.write("<AzButton className=\"$cls\">{${js(node.label)}}</AzButton>")
-            is WebLink -> scope.write("<a className=\"$cls\" href={${js(node.href)}}>{${js(node.text)}}</a>")
-            is WebImage -> scope.write("<img className=\"$cls\" src={${js(node.src)}} alt={${js(node.alt)}} />")
-            is WebInput -> scope.write("<input className=\"$cls\" placeholder={${js(node.placeholder)}} />")
-            is WebSpacer -> scope.write("<div className=\"$cls\" />")
+            is SceneButton -> scope.write("<AzButton className=\"$cls\">{${js(node.label)}}</AzButton>")
+            is SceneLink -> scope.write("<a className=\"$cls\" href={${js(node.href)}}>{${js(node.text)}}</a>")
+            is SceneImage -> scope.write("<img className=\"$cls\" src={${js(node.src)}} alt={${js(node.alt)}} />")
+            is SceneInput -> scope.write("<input className=\"$cls\" placeholder={${js(node.placeholder)}} />")
+            is SceneSpacer -> scope.write("<div className=\"$cls\" />")
         }
     }
 
     private fun container(
         scope: GenScope,
         cls: String,
-        slots: List<WebSlot>,
-        pool: Map<String, WebComponent>,
+        slots: List<SceneSlot>,
+        pool: Map<String, SceneComponent>,
         instances: Map<String, String>,
         reactNames: Map<String, String>,
         visiting: Set<String>

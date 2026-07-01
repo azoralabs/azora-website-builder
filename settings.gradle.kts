@@ -22,6 +22,9 @@ includeBuild("../azora-studio") {
         substitute(module("dev.azora:azora-sdk-core-theme")).using(project(":azora-sdk-core:theme"))
         substitute(module("dev.azora:azora-sdk-canvas-domain")).using(project(":azora-sdk:canvas:domain"))
         substitute(module("dev.azora:azora-sdk-canvas-presentation")).using(project(":azora-sdk:canvas:presentation"))
+        // Universal scene compiler SDK: the scene model/IR + .azn file I/O this plugin builds on.
+        substitute(module("dev.azora:azora-sdk-compiler-scene-domain")).using(project(":azora-sdk:compiler:scene:domain"))
+        substitute(module("dev.azora:azora-sdk-compiler-scene-data")).using(project(":azora-sdk:compiler:scene:data"))
         // SDK widgets for the inspector: the color picker and the core component library.
         substitute(module("dev.azora:azora-sdk-color-presentation")).using(project(":azora-sdk:color:presentation"))
         substitute(module("dev.azora:azora-sdk-core-component")).using(project(":azora-sdk-core:component"))

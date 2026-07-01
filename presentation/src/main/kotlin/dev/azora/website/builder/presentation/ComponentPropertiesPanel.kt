@@ -1,5 +1,5 @@
 package dev.azora.website.builder.presentation
-import dev.azora.website.builder.domain.WebComponentTree
+import dev.azora.sdk.compiler.scene.domain.SceneComponentTree
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,20 +27,21 @@ import androidx.compose.ui.unit.sp
 import dev.azora.sdk.color.ColorPicker
 import dev.azora.sdk.core.component.button.AzoraButton
 import dev.azora.sdk.core.component.textfield.AzoraTextField
+import dev.azora.sdk.compiler.scene.domain.*
 import dev.azora.website.builder.domain.*
 import kotlin.math.roundToInt
 
 /**
- * Inspector for the selected [WebComponent], styled after a Jetpack-Compose **modifier chain**: an
+ * Inspector for the selected [SceneComponent], styled after a Jetpack-Compose **modifier chain**: an
  * "Add modifier" menu and a list of removable, collapsible modifier cards. Each modifier maps to a
- * [WebModifier] field (→ CSS at generation). Built from Azora SDK widgets ([ColorPicker],
+ * [SceneModifier] field (→ CSS at generation). Built from Azora SDK widgets ([ColorPicker],
  * [AzoraTextField], [AzoraButton]).
  */
 @Composable
 fun ComponentPropertiesPanel(
-    selected: WebComponent?,
+    selected: SceneComponent?,
     isRoot: Boolean,
-    onChange: (WebComponent) -> Unit,
+    onChange: (SceneComponent) -> Unit,
     onDelete: () -> Unit
 ) {
     val palette = MaterialTheme.colorScheme
@@ -56,22 +57,22 @@ fun ComponentPropertiesPanel(
             return@Column
         }
 
-        Text(WebComponentTree.typeLabel(selected), color = palette.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Text(SceneComponentTree.typeLabel(selected), color = palette.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
 
         // ---- Content (per node type) ----
         if (hasContent(selected)) {
             when (selected) {
-                is WebText -> textField("text", selected.text) { onChange(selected.copy(text = it)) }
-                is WebButton -> textField("label", selected.label) { onChange(selected.copy(label = it)) }
-                is WebLink -> {
+                is SceneText -> textField("text", selected.text) { onChange(selected.copy(text = it)) }
+                is SceneButton -> textField("label", selected.label) { onChange(selected.copy(label = it)) }
+                is SceneLink -> {
                     textField("text", selected.text) { onChange(selected.copy(text = it)) }
                     textField("href", selected.href) { onChange(selected.copy(href = it)) }
                 }
-                is WebImage -> {
+                is SceneImage -> {
                     textField("src", selected.src) { onChange(selected.copy(src = it)) }
                     textField("alt", selected.alt) { onChange(selected.copy(alt = it)) }
                 }
-                is WebInput -> textField("placeholder", selected.placeholder) { onChange(selected.copy(placeholder = it)) }
+                is SceneInput -> textField("placeholder", selected.placeholder) { onChange(selected.copy(placeholder = it)) }
                 else -> {}
             }
             HorizontalDivider(color = palette.outlineVariant)
@@ -106,8 +107,8 @@ fun ComponentPropertiesPanel(
 @Composable
 private fun ModifierCard(
     mod: WebMod,
-    component: WebComponent,
-    onChange: (WebComponent) -> Unit,
+    component: SceneComponent,
+    onChange: (SceneComponent) -> Unit,
     onRemove: () -> Unit
 ) {
     val palette = MaterialTheme.colorScheme
@@ -144,9 +145,9 @@ private fun ModifierCard(
 }
 
 @Composable
-private fun ModifierEditor(mod: WebMod, c: WebComponent, onChange: (WebComponent) -> Unit) {
+private fun ModifierEditor(mod: WebMod, c: SceneComponent, onChange: (SceneComponent) -> Unit) {
     val m = c.modifier
-    fun set(mod2: WebModifier) = onChange(c.withModifier(mod2))
+    fun set(mod2: SceneModifier) = onChange(c.withModifier(mod2))
     when (mod) {
         WebMod.SIZE -> {
             PropertyRow("width") { NumberInput(m.width ?: 0, min = 1) { set(m.copy(width = it)) } }
@@ -156,7 +157,7 @@ private fun ModifierEditor(mod: WebMod, c: WebComponent, onChange: (WebComponent
         }
         WebMod.PADDING -> PropertyRow("all") { NumberInput(m.padding ?: 0) { set(m.copy(padding = it.coerceAtLeast(0))) } }
         WebMod.SPACED_BY -> PropertyRow("space") { NumberInput(m.gap ?: 0) { set(m.copy(gap = it.coerceAtLeast(0))) } }
-        WebMod.ARRANGEMENT -> Chips(arrangementOptions, c.arrangementOrNull() ?: WebArrangement.START) { onChange(c.withArrangement(it)) }
+        WebMod.ARRANGEMENT -> Chips(arrangementOptions, c.arrangementOrNull() ?: SceneArrangement.START) { onChange(c.withArrangement(it)) }
         WebMod.BACKGROUND -> colorField(c.id, "color", m.backgroundColor) { set(m.copy(backgroundColor = it)) }
         WebMod.BORDER -> {
             PropertyRow("width") { NumberInput(m.borderWidth ?: 0, min = 1) { set(m.copy(borderWidth = it)) } }
@@ -283,20 +284,20 @@ private fun <T> Chips(options: List<Pair<T, String>>, selected: T, onSelect: (T)
  *  corner sets all four uniformly. The link toggle is keyed on [componentId] so it survives the value
  *  edits (which produce a new modifier each keystroke). */
 @Composable
-private fun CornerRadiusEditor(componentId: String, m: WebModifier, set: (WebModifier) -> Unit) {
+private fun CornerRadiusEditor(componentId: String, m: SceneModifier, set: (SceneModifier) -> Unit) {
     var link by remember(componentId) { mutableStateOf(false) }
-    val cur = m.corners ?: m.cornerRadius?.let { WebCornerRadius.uniform(it) } ?: WebCornerRadius()
-    fun write(next: WebCornerRadius) = set(m.copy(corners = next, cornerRadius = null))
-    fun uniform(x: Int, y: Int) = WebCornerRadius(WebCorner(x, y), WebCorner(x, y), WebCorner(x, y), WebCorner(x, y))
+    val cur = m.corners ?: m.cornerRadius?.let { SceneCornerRadius.uniform(it) } ?: SceneCornerRadius()
+    fun write(next: SceneCornerRadius) = set(m.copy(corners = next, cornerRadius = null))
+    fun uniform(x: Int, y: Int) = SceneCornerRadius(SceneCorner(x, y), SceneCorner(x, y), SceneCorner(x, y), SceneCorner(x, y))
     PropertyRow("link all") { Toggle(link) { link = it } }
-    CornerRow("top-left", cur.topLeft) { x, y -> write(if (link) uniform(x, y) else cur.copy(topLeft = WebCorner(x, y))) }
-    CornerRow("top-right", cur.topRight) { x, y -> write(if (link) uniform(x, y) else cur.copy(topRight = WebCorner(x, y))) }
-    CornerRow("bottom-right", cur.bottomRight) { x, y -> write(if (link) uniform(x, y) else cur.copy(bottomRight = WebCorner(x, y))) }
-    CornerRow("bottom-left", cur.bottomLeft) { x, y -> write(if (link) uniform(x, y) else cur.copy(bottomLeft = WebCorner(x, y))) }
+    CornerRow("top-left", cur.topLeft) { x, y -> write(if (link) uniform(x, y) else cur.copy(topLeft = SceneCorner(x, y))) }
+    CornerRow("top-right", cur.topRight) { x, y -> write(if (link) uniform(x, y) else cur.copy(topRight = SceneCorner(x, y))) }
+    CornerRow("bottom-right", cur.bottomRight) { x, y -> write(if (link) uniform(x, y) else cur.copy(bottomRight = SceneCorner(x, y))) }
+    CornerRow("bottom-left", cur.bottomLeft) { x, y -> write(if (link) uniform(x, y) else cur.copy(bottomLeft = SceneCorner(x, y))) }
 }
 
 @Composable
-private fun CornerRow(label: String, corner: WebCorner, onSet: (x: Int, y: Int) -> Unit) {
+private fun CornerRow(label: String, corner: SceneCorner, onSet: (x: Int, y: Int) -> Unit) {
     PropertyRow(label) {
         NumberInput(corner.x, "x") { x -> onSet(x, corner.y) }
         NumberInput(corner.y, "y") { onSet(corner.x, it) }
@@ -359,70 +360,70 @@ private fun WebMod.meta(): ModMeta = when (this) {
     WebMod.OPACITY -> ModMeta("alpha", "◐", Color(0xFF6B7280))
 }
 
-private fun WebMod.applies(c: WebComponent): Boolean = when (this) {
+private fun WebMod.applies(c: SceneComponent): Boolean = when (this) {
     WebMod.SPACED_BY -> c.isContainer()
-    WebMod.ARRANGEMENT -> c is WebColumn || c is WebRow
+    WebMod.ARRANGEMENT -> c is SceneColumn || c is SceneRow
     else -> true
 }
 
 /** Whether this modifier card should show. A card persists once explicitly added (its key is in
- *  [WebModifier.active]) even if the value equals the default; it's removed only via × (which clears
+ *  [SceneModifier.active]) even if the value equals the default; it's removed only via × (which clears
  *  the key and resets the value). The value-based fallback keeps cards for docs saved before `active`. */
-private fun WebMod.isActive(c: WebComponent): Boolean {
+private fun WebMod.isActive(c: SceneComponent): Boolean {
     if (this.name in c.modifier.active) return true
     val m = c.modifier
     return when (this) {
         WebMod.SIZE -> m.fillMaxWidth || m.fillMaxHeight || m.width != null || m.height != null
         WebMod.PADDING -> m.padding != null
         WebMod.SPACED_BY -> m.gap != null
-        WebMod.ARRANGEMENT -> (c.arrangementOrNull() ?: WebArrangement.START) != WebArrangement.START
+        WebMod.ARRANGEMENT -> (c.arrangementOrNull() ?: SceneArrangement.START) != SceneArrangement.START
         WebMod.BACKGROUND -> m.backgroundColor != null
         WebMod.BORDER -> m.borderWidth != null
         WebMod.CORNER_RADIUS -> m.corners != null || m.cornerRadius != null
         WebMod.TEXT_COLOR -> m.textColor != null
         WebMod.FONT_SIZE -> m.fontSize != null
-        WebMod.FONT_WEIGHT -> m.fontWeight != WebFontWeight.NORMAL
-        WebMod.TEXT_ALIGN -> m.textAlign != WebTextAlign.START
+        WebMod.FONT_WEIGHT -> m.fontWeight != SceneFontWeight.NORMAL
+        WebMod.TEXT_ALIGN -> m.textAlign != SceneTextAlign.START
         WebMod.OPACITY -> m.opacity != null
     }
 }
 
-private fun WebMod.add(c: WebComponent): WebComponent {
+private fun WebMod.add(c: SceneComponent): SceneComponent {
     val key = this.name
-    fun WebModifier.mark() = copy(active = (active + key).distinct())
+    fun SceneModifier.mark() = copy(active = (active + key).distinct())
     val m = c.modifier
     return when (this) {
         WebMod.SIZE -> c.withModifier(m.copy(fillMaxWidth = true).mark())
         WebMod.PADDING -> c.withModifier(m.copy(padding = 16).mark())
         WebMod.SPACED_BY -> c.withModifier(m.copy(gap = 8).mark())
-        WebMod.ARRANGEMENT -> c.withArrangement(WebArrangement.CENTER).withModifier(m.mark())
+        WebMod.ARRANGEMENT -> c.withArrangement(SceneArrangement.CENTER).withModifier(m.mark())
         WebMod.BACKGROUND -> c.withModifier(m.copy(backgroundColor = "#FFFFFF").mark())
         WebMod.BORDER -> c.withModifier(m.copy(borderWidth = 1, borderColor = "#000000").mark())
-        WebMod.CORNER_RADIUS -> c.withModifier(m.copy(corners = WebCornerRadius.uniform(8), cornerRadius = null).mark())
+        WebMod.CORNER_RADIUS -> c.withModifier(m.copy(corners = SceneCornerRadius.uniform(8), cornerRadius = null).mark())
         WebMod.TEXT_COLOR -> c.withModifier(m.copy(textColor = "#000000").mark())
         WebMod.FONT_SIZE -> c.withModifier(m.copy(fontSize = 16).mark())
-        WebMod.FONT_WEIGHT -> c.withModifier(m.copy(fontWeight = WebFontWeight.MEDIUM).mark())
-        WebMod.TEXT_ALIGN -> c.withModifier(m.copy(textAlign = WebTextAlign.CENTER).mark())
+        WebMod.FONT_WEIGHT -> c.withModifier(m.copy(fontWeight = SceneFontWeight.MEDIUM).mark())
+        WebMod.TEXT_ALIGN -> c.withModifier(m.copy(textAlign = SceneTextAlign.CENTER).mark())
         WebMod.OPACITY -> c.withModifier(m.copy(opacity = 100).mark())
     }
 }
 
-private fun WebMod.remove(c: WebComponent): WebComponent {
+private fun WebMod.remove(c: SceneComponent): SceneComponent {
     val key = this.name
-    fun WebModifier.unmark() = copy(active = active - key)
+    fun SceneModifier.unmark() = copy(active = active - key)
     val m = c.modifier
     return when (this) {
         WebMod.SIZE -> c.withModifier(m.copy(fillMaxWidth = false, fillMaxHeight = false, width = null, height = null).unmark())
         WebMod.PADDING -> c.withModifier(m.copy(padding = null).unmark())
         WebMod.SPACED_BY -> c.withModifier(m.copy(gap = null).unmark())
-        WebMod.ARRANGEMENT -> c.withArrangement(WebArrangement.START).withModifier(m.unmark())
+        WebMod.ARRANGEMENT -> c.withArrangement(SceneArrangement.START).withModifier(m.unmark())
         WebMod.BACKGROUND -> c.withModifier(m.copy(backgroundColor = null).unmark())
         WebMod.BORDER -> c.withModifier(m.copy(borderWidth = null, borderColor = null).unmark())
         WebMod.CORNER_RADIUS -> c.withModifier(m.copy(corners = null, cornerRadius = null).unmark())
         WebMod.TEXT_COLOR -> c.withModifier(m.copy(textColor = null).unmark())
         WebMod.FONT_SIZE -> c.withModifier(m.copy(fontSize = null).unmark())
-        WebMod.FONT_WEIGHT -> c.withModifier(m.copy(fontWeight = WebFontWeight.NORMAL).unmark())
-        WebMod.TEXT_ALIGN -> c.withModifier(m.copy(textAlign = WebTextAlign.START).unmark())
+        WebMod.FONT_WEIGHT -> c.withModifier(m.copy(fontWeight = SceneFontWeight.NORMAL).unmark())
+        WebMod.TEXT_ALIGN -> c.withModifier(m.copy(textAlign = SceneTextAlign.START).unmark())
         WebMod.OPACITY -> c.withModifier(m.copy(opacity = null).unmark())
     }
 }
@@ -430,36 +431,36 @@ private fun WebMod.remove(c: WebComponent): WebComponent {
 // ---------------- enum option tables ----------------
 
 private val arrangementOptions = listOf(
-    WebArrangement.START to "Start", WebArrangement.CENTER to "Center",
-    WebArrangement.END to "End", WebArrangement.SPACE_BETWEEN to "SpaceBetween"
+    SceneArrangement.START to "Start", SceneArrangement.CENTER to "Center",
+    SceneArrangement.END to "End", SceneArrangement.SPACE_BETWEEN to "SpaceBetween"
 )
 private val fontWeightOptions = listOf(
-    WebFontWeight.NORMAL to "Normal", WebFontWeight.MEDIUM to "Medium",
-    WebFontWeight.SEMI_BOLD to "SemiBold", WebFontWeight.BOLD to "Bold"
+    SceneFontWeight.NORMAL to "Normal", SceneFontWeight.MEDIUM to "Medium",
+    SceneFontWeight.SEMI_BOLD to "SemiBold", SceneFontWeight.BOLD to "Bold"
 )
 private val textAlignOptions = listOf(
-    WebTextAlign.START to "Start", WebTextAlign.CENTER to "Center", WebTextAlign.END to "End"
+    SceneTextAlign.START to "Start", SceneTextAlign.CENTER to "Center", SceneTextAlign.END to "End"
 )
 private val borderPositionOptions = listOf(
-    WebBorderPosition.INSIDE to "Inside", WebBorderPosition.OUTSIDE to "Outside", WebBorderPosition.CENTER to "Center"
+    SceneBorderPosition.INSIDE to "Inside", SceneBorderPosition.OUTSIDE to "Outside", SceneBorderPosition.CENTER to "Center"
 )
 
 // ---------------- helpers ----------------
 
-private fun hasContent(c: WebComponent): Boolean =
-    c is WebText || c is WebButton || c is WebLink || c is WebImage || c is WebInput
+private fun hasContent(c: SceneComponent): Boolean =
+    c is SceneText || c is SceneButton || c is SceneLink || c is SceneImage || c is SceneInput
 
-private fun WebComponent.isContainer(): Boolean = this is WebColumn || this is WebRow || this is WebBox
+private fun SceneComponent.isContainer(): Boolean = this is SceneColumn || this is SceneRow || this is SceneBox
 
-private fun WebComponent.arrangementOrNull(): WebArrangement? = when (this) {
-    is WebColumn -> arrangement
-    is WebRow -> arrangement
+private fun SceneComponent.arrangementOrNull(): SceneArrangement? = when (this) {
+    is SceneColumn -> arrangement
+    is SceneRow -> arrangement
     else -> null
 }
 
-private fun WebComponent.withArrangement(a: WebArrangement): WebComponent = when (this) {
-    is WebColumn -> copy(arrangement = a)
-    is WebRow -> copy(arrangement = a)
+private fun SceneComponent.withArrangement(a: SceneArrangement): SceneComponent = when (this) {
+    is SceneColumn -> copy(arrangement = a)
+    is SceneRow -> copy(arrangement = a)
     else -> this
 }
 
@@ -482,15 +483,15 @@ private fun Color.toHex6(): String {
     return "#%02X%02X%02X".format(r, g, b)
 }
 
-/** Returns a copy of [this] with its [WebModifier] replaced (per concrete type). */
-private fun WebComponent.withModifier(mod: WebModifier): WebComponent = when (this) {
-    is WebColumn -> copy(modifier = mod)
-    is WebRow -> copy(modifier = mod)
-    is WebBox -> copy(modifier = mod)
-    is WebText -> copy(modifier = mod)
-    is WebButton -> copy(modifier = mod)
-    is WebImage -> copy(modifier = mod)
-    is WebLink -> copy(modifier = mod)
-    is WebInput -> copy(modifier = mod)
-    is WebSpacer -> copy(modifier = mod)
+/** Returns a copy of [this] with its [SceneModifier] replaced (per concrete type). */
+private fun SceneComponent.withModifier(mod: SceneModifier): SceneComponent = when (this) {
+    is SceneColumn -> copy(modifier = mod)
+    is SceneRow -> copy(modifier = mod)
+    is SceneBox -> copy(modifier = mod)
+    is SceneText -> copy(modifier = mod)
+    is SceneButton -> copy(modifier = mod)
+    is SceneImage -> copy(modifier = mod)
+    is SceneLink -> copy(modifier = mod)
+    is SceneInput -> copy(modifier = mod)
+    is SceneSpacer -> copy(modifier = mod)
 }

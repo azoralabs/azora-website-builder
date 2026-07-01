@@ -7,12 +7,12 @@ import dev.azora.sdk.core.project.domain.ProjectTemplateContribution
 import dev.azora.sdk.core.project.domain.ProjectTemplateGenerator
 import dev.azora.sdk.core.project.domain.ProjectRunTarget
 import dev.azora.sdk.core.project.domain.ProjectRunTargetKind
-import dev.azora.website.builder.domain.WebColumn
-import dev.azora.website.builder.domain.NavLink
-import dev.azora.website.builder.domain.WebFontWeight
-import dev.azora.website.builder.domain.WebModifier
-import dev.azora.website.builder.domain.WebSlot
-import dev.azora.website.builder.domain.WebText
+import dev.azora.sdk.compiler.scene.domain.SceneColumn
+import dev.azora.sdk.compiler.scene.domain.NavLink
+import dev.azora.sdk.compiler.scene.domain.SceneFontWeight
+import dev.azora.sdk.compiler.scene.domain.SceneModifier
+import dev.azora.sdk.compiler.scene.domain.SceneSlot
+import dev.azora.sdk.compiler.scene.domain.SceneText
 import dev.azora.sdk.plugin.core.AzoraPlugin
 import dev.azora.sdk.plugin.core.AzsceneTemplate
 import dev.azora.sdk.plugin.core.PluginCategory
@@ -25,7 +25,7 @@ import dev.azora.website.builder.presentation.WebsiteBuilderSettingsTab
 import dev.azora.website.builder.presentation.WebsitePreviewPanel
 import dev.azora.website.builder.presentation.theme.AzoraMaterialTheme
 import dev.azora.website.builder.data.generator.ReactSiteGenerator
-import dev.azora.website.builder.domain.WebSceneDoc
+import dev.azora.sdk.compiler.scene.domain.SceneDocument
 import dev.azora.website.builder.data.WebSceneFiles
 import dev.azora.website.builder.domain.WebSceneType
 
@@ -134,13 +134,13 @@ class WebsiteBuilderPlugin : AzoraPlugin {
                     StarterPage("About", "/about", "About $brand", "Learn more about what we do."),
                     StarterPage("ContactUs", "/contact-us", "Contact Us", "Get in touch — we'd love to hear from you.")
                 ).forEach { sp ->
-                    val heading = WebText(text = sp.heading, modifier = WebModifier(fontSize = 40, fontWeight = WebFontWeight.BOLD))
-                    val body = WebText(text = sp.body, modifier = WebModifier(fontSize = 18, textColor = "#9CA3AF"))
-                    val root = WebColumn(
-                        modifier = WebModifier(fillMaxWidth = true, padding = 48, gap = 16),
-                        slots = listOf(WebSlot(childId = heading.id), WebSlot(childId = body.id))
+                    val heading = SceneText(text = sp.heading, modifier = SceneModifier(fontSize = 40, fontWeight = SceneFontWeight.BOLD))
+                    val body = SceneText(text = sp.body, modifier = SceneModifier(fontSize = 18, textColor = "#9CA3AF"))
+                    val root = SceneColumn(
+                        modifier = SceneModifier(fillMaxWidth = true, padding = 48, gap = 16),
+                        slots = listOf(SceneSlot(childId = heading.id), SceneSlot(childId = body.id))
                     )
-                    WebSceneFiles.writePage(fileSystem, projectPath, sp.name, WebSceneDoc(
+                    WebSceneFiles.writePage(fileSystem, projectPath, sp.name, SceneDocument(
                         type = WebSceneType.PAGE, name = sp.name, route = sp.route,
                         nodes = listOf(root, heading, body), rootId = root.id
                     ))
@@ -149,7 +149,7 @@ class WebsiteBuilderPlugin : AzoraPlugin {
 
             // Site config scene (WebsiteConfig.azn), created once.
             if (WebSceneFiles.readConfig(fileSystem, projectPath) == null) {
-                WebSceneFiles.writeConfig(fileSystem, projectPath, WebSceneDoc(type = WebSceneType.CONFIG, name = "WebsiteConfig",
+                WebSceneFiles.writeConfig(fileSystem, projectPath, SceneDocument(type = WebSceneType.CONFIG, name = "WebsiteConfig",
                     settings = mapOf(
                         "title" to brand, "description" to "Built with Azora Studio", "themeColor" to "#D14EEA",
                         "navFile" to "WebsiteNavigation${WebSceneFiles.EXT}"
@@ -159,7 +159,7 @@ class WebsiteBuilderPlugin : AzoraPlugin {
             // Navigation scene (WebsiteNavigation.azn), created once with Home/About/Contact entries.
             if (WebSceneFiles.loadNavigation(fileSystem, projectPath).isEmpty()) {
                 WebSceneFiles.write(fileSystem, "$projectPath/WebsiteNavigation${WebSceneFiles.EXT}",
-                    WebSceneDoc(type = WebSceneType.NAVIGATION, name = "WebsiteNavigation",
+                    SceneDocument(type = WebSceneType.NAVIGATION, name = "WebsiteNavigation",
                         nav = listOf(NavLink("Home", "/"), NavLink("About", "/about"), NavLink("Contact Us", "/contact-us"))))
             }
 

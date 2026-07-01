@@ -27,10 +27,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.azora.website.builder.domain.WebColumn
+import dev.azora.sdk.compiler.scene.domain.SceneColumn
 import dev.azora.sdk.plugin.core.PluginContext
 import dev.azora.canvas.presentation.menu.*
 import dev.azora.website.builder.presentation.node.*
+import dev.azora.sdk.compiler.scene.domain.*
 import dev.azora.website.builder.domain.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -50,9 +51,9 @@ fun AzsceneEditorScreen(type: String, filePath: String, context: PluginContext) 
     val scope = rememberCoroutineScope()
     val baseName = filePath.substringAfterLast('/').removeSuffix(WebSceneFiles.EXT)
 
-    var doc by remember(filePath) { mutableStateOf<WebSceneDoc?>(null) }
-    var components by remember(filePath) { mutableStateOf<List<WebSceneDoc>>(emptyList()) }
-    var pages by remember(filePath) { mutableStateOf<List<WebSceneDoc>>(emptyList()) }
+    var doc by remember(filePath) { mutableStateOf<SceneDocument?>(null) }
+    var components by remember(filePath) { mutableStateOf<List<SceneDocument>>(emptyList()) }
+    var pages by remember(filePath) { mutableStateOf<List<SceneDocument>>(emptyList()) }
     var dirty by remember(filePath) { mutableStateOf(false) }
 
     // Undo/redo — registered with the host coordinator so toolbar buttons work (same pattern as
@@ -67,8 +68,8 @@ fun AzsceneEditorScreen(type: String, filePath: String, context: PluginContext) 
 
     LaunchedEffect(filePath) {
         val loaded = WebSceneFiles.read(fs, filePath)
-            ?: if (type == WebSceneType.PAGE || type == WebSceneType.COMPONENT) WebSceneDoc.withRoot(type = type, name = baseName)
-            else WebSceneDoc(type = type, name = baseName)
+            ?: if (type == WebSceneType.PAGE || type == WebSceneType.COMPONENT) SceneDocument.withRoot(type = type, name = baseName)
+            else SceneDocument(type = type, name = baseName)
         doc = loaded
         undoRedo.setCurrent(loaded)
         components = WebSceneFiles.loadComponents(fs, projectPath)
@@ -82,12 +83,12 @@ fun AzsceneEditorScreen(type: String, filePath: String, context: PluginContext) 
         while (true) {
             delay(1200)
             val loaded = WebSceneFiles.loadComponents(fs, projectPath)
-            if (loaded.map(WebSceneDoc::name) != components.map(WebSceneDoc::name)) {
+            if (loaded.map(SceneDocument::name) != components.map(SceneDocument::name)) {
                 components = loaded
             }
             if (type == WebSceneType.NAVIGATION) {
                 val loadedPages = WebSceneFiles.loadPages(fs, projectPath)
-                if (loadedPages.map(WebSceneDoc::name) != pages.map(WebSceneDoc::name)) {
+                if (loadedPages.map(SceneDocument::name) != pages.map(SceneDocument::name)) {
                     pages = loadedPages
                 }
             }
@@ -105,7 +106,7 @@ fun AzsceneEditorScreen(type: String, filePath: String, context: PluginContext) 
     // Restore callback — invoked by undo/redo to set the doc.
     undoRedo.onRestoreCb = { restored -> doc = restored; dirty = true }
 
-    fun update(next: WebSceneDoc) {
+    fun update(next: SceneDocument) {
         val prev = doc
         if (prev != null) undoRedo.pushState(prev)
         doc = next; dirty = true
@@ -113,7 +114,7 @@ fun AzsceneEditorScreen(type: String, filePath: String, context: PluginContext) 
         undoFacade?.setActive(undoRedo.providerId)
     }
 
-    fun mutate(transform: (WebSceneDoc) -> WebSceneDoc) {
+    fun mutate(transform: (SceneDocument) -> SceneDocument) {
         val latest = doc ?: return
         undoRedo.pushState(latest)
         val next = transform(latest)
@@ -187,8 +188,8 @@ fun AzsceneEditorScreen(type: String, filePath: String, context: PluginContext) 
  *  Settings are mirrored into `project.azora` on save; the nav path is stored in project extras. */
 @Composable
 private fun ConfigForm(
-    doc: WebSceneDoc,
-    onChange: (WebSceneDoc) -> Unit,
+    doc: SceneDocument,
+    onChange: (SceneDocument) -> Unit,
     context: PluginContext? = null,
     modifier: Modifier = Modifier
 ) {
@@ -262,9 +263,9 @@ private fun ConfigForm(
  */
 @Composable
 private fun ConfigNavEditor(
-    doc: WebSceneDoc,
-    pages: List<WebSceneDoc>,
-    onChange: (WebSceneDoc) -> Unit,
+    doc: SceneDocument,
+    pages: List<SceneDocument>,
+    onChange: (SceneDocument) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val entryId = "__nav__"
@@ -415,8 +416,8 @@ private fun NavEntryRow(entry: NavLink, index: Int, lastIndex: Int, onEdit: (Str
 }
 
 /** Undo/redo provider for a website scene — extends the SDK's [AbstractPluginUndoRedo] base. */
-private class WebSceneUndoRedoProvider(filePath: String) : AbstractPluginUndoRedo<WebSceneDoc>() {
+private class WebSceneUndoRedoProvider(filePath: String) : AbstractPluginUndoRedo<SceneDocument>() {
     override val providerId = "website_$filePath"
-    var onRestoreCb: ((WebSceneDoc) -> Unit)? = null
-    override fun onRestore(state: WebSceneDoc) { onRestoreCb?.invoke(state) }
+    var onRestoreCb: ((SceneDocument) -> Unit)? = null
+    override fun onRestore(state: SceneDocument) { onRestoreCb?.invoke(state) }
 }

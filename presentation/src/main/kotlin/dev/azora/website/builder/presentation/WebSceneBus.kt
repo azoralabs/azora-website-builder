@@ -1,6 +1,6 @@
 package dev.azora.website.builder.presentation
 
-import dev.azora.website.builder.domain.WebSceneDoc
+import dev.azora.sdk.compiler.scene.domain.SceneDocument
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
  * ([WebsitePreviewPanel]). Like [WebSelectionBus], it is a singleton in the shared plugin
  * classloader because the two panels have no common Compose state holder.
  *
- * The editor publishes the latest [WebSceneDoc] on every change (before the debounced disk write);
+ * The editor publishes the latest [SceneDocument] on every change (before the debounced disk write);
  * the preview overlays these live docs over its disk-loaded pages/components (keyed by [name]) so an
  * edit appears in the preview the same frame instead of waiting on the 2 s disk poll + autosave.
  * The poll stays as a backstop for structural/external changes (new files, scenes edited elsewhere).
@@ -19,9 +19,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
  * dispose so stale live data can't shadow the disk after it closes.
  */
 object WebSceneBus {
-    val liveScenes = MutableStateFlow<Map<String, WebSceneDoc>>(emptyMap())
+    val liveScenes = MutableStateFlow<Map<String, SceneDocument>>(emptyMap())
 
-    fun publish(doc: WebSceneDoc) {
+    fun publish(doc: SceneDocument) {
         val key = doc.name.trim()
         if (key.isBlank()) return
         liveScenes.value = liveScenes.value + (key to doc)

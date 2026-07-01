@@ -1,6 +1,7 @@
 package dev.azora.website.builder.domain
 
 import dev.azora.sdk.core.project.domain.AzoraProjectModel
+import dev.azora.sdk.compiler.scene.domain.NavLink
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer

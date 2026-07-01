@@ -1,23 +1,23 @@
 package dev.azora.website.builder.presentation
-import dev.azora.website.builder.domain.WebComponentTree
-import dev.azora.website.builder.domain.ComponentKind
+import dev.azora.sdk.compiler.scene.domain.SceneComponentTree
+import dev.azora.sdk.compiler.scene.domain.ComponentKind
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import dev.azora.website.builder.domain.WebComponent
-import dev.azora.website.builder.domain.WebSpacer
+import dev.azora.sdk.compiler.scene.domain.SceneComponent
+import dev.azora.sdk.compiler.scene.domain.SceneSpacer
 import dev.azora.sdk.core.theme.palette.AzoraPalette
 import dev.azora.canvas.presentation.menu.*
 import dev.azora.canvas.presentation.util.autoLayout
 import dev.azora.website.builder.presentation.node.*
-import dev.azora.website.builder.domain.CanvasPoint
-import dev.azora.website.builder.domain.WebSceneDoc
+import dev.azora.sdk.compiler.scene.domain.CanvasPoint
+import dev.azora.sdk.compiler.scene.domain.SceneDocument
 
 /**
  * Renders a scene's node pool as a node graph. Every node in [nodes] is drawn; a container's ordered
- * [dev.azora.website.builder.domain.WebSlot]s are its out-ports (one port per slot, no label), and each
+ * [dev.azora.sdk.compiler.scene.domain.SceneSlot]s are its out-ports (one port per slot, no label), and each
  * occupied slot links to the node it references — so a node reused in several slots shows several
  * incoming links. The `+` row appends an empty slot; right-clicking a slot deletes it (others keep
  * their order). Dragging a slot onto a node sets that slot's reference (the node isn't moved, so it
@@ -29,15 +29,15 @@ import dev.azora.website.builder.domain.WebSceneDoc
  */
 @Composable
 fun ComponentTreeCanvas(
-    nodes: List<WebComponent>,
+    nodes: List<SceneComponent>,
     rootId: String,
     persistedPositions: Map<String, CanvasPoint>,
     selectedId: String?,
     onSelect: (String?) -> Unit,
-    onNodesChange: (List<WebComponent>) -> Unit,
+    onNodesChange: (List<SceneComponent>) -> Unit,
     onPersistPosition: (String, CanvasPoint) -> Unit,
     modifier: Modifier = Modifier,
-    components: List<WebSceneDoc> = emptyList(),
+    components: List<SceneDocument> = emptyList(),
     excludeName: String? = null,
     instances: Map<String, String> = emptyMap(),
     onInstance: (nodeId: String, componentName: String) -> Unit = { _, _ -> }
@@ -62,14 +62,14 @@ fun ComponentTreeCanvas(
                 canAddSlots = false
             )
         } else {
-            val isContainer = WebComponentTree.isContainer(c)
+            val isContainer = SceneComponentTree.isContainer(c)
             val outputs = if (isContainer) {
                 // One port per slot (id = slot id), no label. Occupied + empty slots alike.
-                WebComponentTree.slotsOf(c).map { slot -> WebPort(slot.id, "", AzoraPalette.AccentGreen) }
+                SceneComponentTree.slotsOf(c).map { slot -> WebPort(slot.id, "", AzoraPalette.AccentGreen) }
             } else emptyList()
             WebNode(
-                id = c.id, position = pos(c.id), title = WebComponentTree.typeLabel(c),
-                subtitle = WebComponentTree.summary(c), accent = accentFor(c), hasInput = c.id != rootId,
+                id = c.id, position = pos(c.id), title = SceneComponentTree.typeLabel(c),
+                subtitle = SceneComponentTree.summary(c), accent = accentFor(c), hasInput = c.id != rootId,
                 outputs = outputs, canAddSlots = isContainer
             )
         }
@@ -77,8 +77,8 @@ fun ComponentTreeCanvas(
 
     // One link per occupied slot (a node referenced by N slots gets N incoming links → reuse).
     val links = nodes.flatMap { c ->
-        if (!WebComponentTree.isContainer(c) || instances[c.id] != null) return@flatMap emptyList()
-        WebComponentTree.slotsOf(c).mapNotNull { slot ->
+        if (!SceneComponentTree.isContainer(c) || instances[c.id] != null) return@flatMap emptyList()
+        SceneComponentTree.slotsOf(c).mapNotNull { slot ->
             val childId = slot.childId ?: return@mapNotNull null
             if (nodes.none { it.id == childId }) return@mapNotNull null // dangling ref: nothing to draw
             WebNodeLink("${c.id}->${slot.id}", c.id, slot.id, childId, AzoraPalette.AccentGreen.copy(alpha = 0.7f), slot.reroutePoints)
@@ -94,7 +94,7 @@ fun ComponentTreeCanvas(
         onLink = { sourceId, sourcePortId, targetId ->
             // Dragging a slot onto a node sets that slot's reference (node stays in the pool, so it can
             // be referenced by other slots too → multi-reference).
-            onNodesChange(WebComponentTree.setSlotChild(nodes, sourceId, sourcePortId, targetId))
+            onNodesChange(SceneComponentTree.setSlotChild(nodes, sourceId, sourcePortId, targetId))
         },
         onNodeMove = { id, position -> localPositions[id] = position; lastDragged = id },
         onNodeMoveEnd = {
@@ -104,13 +104,13 @@ fun ComponentTreeCanvas(
             }
             lastDragged = null
         },
-        onAddSlot = { containerId -> onNodesChange(WebComponentTree.addSlot(nodes, containerId)) },
+        onAddSlot = { containerId -> onNodesChange(SceneComponentTree.addSlot(nodes, containerId)) },
         nodeContextMenu = { nodeId, screenPos, onDismiss ->
             NodeContextMenu(
                 position = screenPos,
                 items = listOf(
                     NodeMenuItem("Duplicate") {
-                        val (newNodes, newId) = WebComponentTree.duplicate(nodes, nodeId)
+                        val (newNodes, newId) = SceneComponentTree.duplicate(nodes, nodeId)
                         if (newId != null) {
                             onNodesChange(newNodes)
                             // Place the copy just off the original so it's visible immediately.
@@ -122,7 +122,7 @@ fun ComponentTreeCanvas(
                         onDismiss()
                     },
                     NodeMenuItem("Delete node", color = AzoraPalette.AccentRed) {
-                        onNodesChange(WebComponentTree.removeNode(nodes, nodeId))
+                        onNodesChange(SceneComponentTree.removeNode(nodes, nodeId))
                         if (selectedId == nodeId) onSelect(null)
                         onDismiss()
                     }
@@ -131,17 +131,17 @@ fun ComponentTreeCanvas(
             )
         },
         onRerouteAdded = { containerId, slotId, point, insertIndex ->
-            onNodesChange(WebComponentTree.addReroute(nodes, containerId, slotId, point, insertIndex))
+            onNodesChange(SceneComponentTree.addReroute(nodes, containerId, slotId, point, insertIndex))
         },
         onRerouteRemoved = { containerId, slotId, rerouteId ->
-            onNodesChange(WebComponentTree.removeReroute(nodes, containerId, slotId, rerouteId))
+            onNodesChange(SceneComponentTree.removeReroute(nodes, containerId, slotId, rerouteId))
         },
         onRerouteMoved = { containerId, slotId, rerouteId, dx, dy ->
-            onNodesChange(WebComponentTree.moveReroute(nodes, containerId, slotId, rerouteId, dx, dy))
+            onNodesChange(SceneComponentTree.moveReroute(nodes, containerId, slotId, rerouteId, dx, dy))
         },
         portContextMenu = { nodeId, portIndex, screenPos, onDismiss ->
-            val container = WebComponentTree.byId(nodes, nodeId)
-            val slot = container?.let { WebComponentTree.slotsOf(it).getOrNull(portIndex) }
+            val container = SceneComponentTree.byId(nodes, nodeId)
+            val slot = container?.let { SceneComponentTree.slotsOf(it).getOrNull(portIndex) }
             if (slot == null) { onDismiss(); return@WebNodeCanvas }
             NodeContextMenu(
                 position = screenPos,
@@ -149,7 +149,7 @@ fun ComponentTreeCanvas(
                     NodeMenuItem("Delete", color = AzoraPalette.AccentRed) {
                         // Removes just this slot; the referenced node stays in the pool (may still be
                         // referenced elsewhere, or becomes free-floating). Others keep their order.
-                        onNodesChange(WebComponentTree.removeSlot(nodes, nodeId, slot.id))
+                        onNodesChange(SceneComponentTree.removeSlot(nodes, nodeId, slot.id))
                         onDismiss()
                     }
                 ),
@@ -159,19 +159,19 @@ fun ComponentTreeCanvas(
         contextMenu = { screenPos, worldPos, onDismiss ->
             // New nodes are created free-floating (added to the pool, referenced by nothing) — wired
             // into a container later by dragging a slot onto them.
-            fun insert(created: WebComponent) {
+            fun insert(created: SceneComponent) {
                 localPositions[created.id] = worldPos
                 onPersistPosition(created.id, CanvasPoint(worldPos.x, worldPos.y))
-                onNodesChange(WebComponentTree.addNode(nodes, created))
+                onNodesChange(SceneComponentTree.addNode(nodes, created))
                 onSelect(created.id)
             }
             val menuComponents = components.filter { it.name != excludeName }
             val sections = buildList {
-                add(NodeMenuSection("Add element", ComponentKind.entries.map { kind -> NodeMenuItem(kind.label) { insert(WebComponentTree.create(kind)) } }))
+                add(NodeMenuSection("Add element", ComponentKind.entries.map { kind -> NodeMenuItem(kind.label) { insert(SceneComponentTree.create(kind)) } }))
                 if (menuComponents.isNotEmpty()) {
                     add(NodeMenuSection("Components", menuComponents.map { def ->
                         NodeMenuItem(def.name) {
-                            val anchor = WebSpacer()
+                            val anchor = SceneSpacer()
                             onInstance(anchor.id, def.name)
                             insert(anchor)
                         }
@@ -184,7 +184,7 @@ fun ComponentTreeCanvas(
 }
 
 /** Stagger pool nodes in a grid as a fallback position; persisted/click positions always win. */
-private fun accentFor(c: WebComponent): Color = when (WebComponentTree.typeLabel(c)) {
+private fun accentFor(c: SceneComponent): Color = when (SceneComponentTree.typeLabel(c)) {
     "Column", "Row", "Box" -> AzoraPalette.AccentBlue
     "Text" -> AzoraPalette.AccentTeal
     "Button" -> AzoraPalette.AccentGreen

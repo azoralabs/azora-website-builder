@@ -1,13 +1,13 @@
 package dev.azora.website.builder.presentation
-import dev.azora.website.builder.domain.WebComponentTree
+import dev.azora.sdk.compiler.scene.domain.SceneComponentTree
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import dev.azora.website.builder.domain.CanvasPoint
-import dev.azora.website.builder.domain.WebComponent
-import dev.azora.website.builder.domain.WebSceneDoc
+import dev.azora.sdk.compiler.scene.domain.CanvasPoint
+import dev.azora.sdk.compiler.scene.domain.SceneComponent
+import dev.azora.sdk.compiler.scene.domain.SceneDocument
 
 /**
  * Visual editor for a page/component scene: the [ComponentTreeCanvas] on the left and the
@@ -16,20 +16,20 @@ import dev.azora.website.builder.domain.WebSceneDoc
  */
 @Composable
 fun WebSceneEditor(
-    nodes: List<WebComponent>,
+    nodes: List<SceneComponent>,
     rootId: String,
     positions: Map<String, CanvasPoint>,
-    onNodesChange: (List<WebComponent>) -> Unit,
+    onNodesChange: (List<SceneComponent>) -> Unit,
     onPersistPosition: (String, CanvasPoint) -> Unit,
     modifier: Modifier = Modifier,
-    components: List<WebSceneDoc> = emptyList(),
+    components: List<SceneDocument> = emptyList(),
     excludeName: String? = null,
     instances: Map<String, String> = emptyMap(),
     onInstance: (nodeId: String, componentName: String) -> Unit = { _, _ -> },
     onOpenComponent: (componentName: String) -> Unit = {}
 ) {
     var selectedId by remember(rootId) { mutableStateOf<String?>(null) }
-    val selected = selectedId?.let { id -> WebComponentTree.byId(nodes, id) }
+    val selected = selectedId?.let { id -> SceneComponentTree.byId(nodes, id) }
 
     // Double-click detection: the canvas only reports single selections, so two selects of the same
     // node within the window count as a double-click. Double-clicking a component-instance node opens
@@ -43,7 +43,7 @@ fun WebSceneEditor(
     val busSelection by WebSelectionBus.selectedId.collectAsState()
     LaunchedEffect(busSelection, nodes) {
         val id = busSelection
-        if (id != selectedId && (id == null || WebComponentTree.byId(nodes, id) != null)) {
+        if (id != selectedId && (id == null || SceneComponentTree.byId(nodes, id) != null)) {
             selectedId = id
         }
     }
@@ -75,9 +75,9 @@ fun WebSceneEditor(
         ComponentPropertiesPanel(
             selected = selected,
             isRoot = selected?.id == rootId,
-            onChange = { edited -> onNodesChange(WebComponentTree.replaceNode(nodes, edited.id) { edited }) },
+            onChange = { edited -> onNodesChange(SceneComponentTree.replaceNode(nodes, edited.id) { edited }) },
             onDelete = {
-                selected?.let { onNodesChange(WebComponentTree.removeNode(nodes, it.id)) }
+                selected?.let { onNodesChange(SceneComponentTree.removeNode(nodes, it.id)) }
                 selectedId = null
             }
         )

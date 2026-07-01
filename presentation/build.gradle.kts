@@ -12,6 +12,9 @@ dependencies {
     compileOnly("dev.azora:azora-sdk-core-domain:0.1.0")
     compileOnly("dev.azora:azora-sdk-core-presentation:0.1.0")
     compileOnly("dev.azora:azora-sdk-core-io:0.1.0")
+    // Universal scene model + .azn file I/O (provided by Studio at runtime).
+    compileOnly("dev.azora:azora-sdk-compiler-scene-domain:0.1.0")
+    compileOnly("dev.azora:azora-sdk-compiler-scene-data:0.1.0")
     // SDK node-graph canvas + palette used by the .azscene visual editor.
     compileOnly("dev.azora:azora-sdk-canvas-domain:0.1.0")
     compileOnly("dev.azora:azora-sdk-canvas-presentation:0.1.0")

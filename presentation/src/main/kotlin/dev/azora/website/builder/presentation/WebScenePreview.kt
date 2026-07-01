@@ -34,11 +34,12 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.azora.sdk.compiler.scene.domain.*
 import dev.azora.website.builder.domain.*
 import dev.azora.sdk.plugin.core.PluginContext
 import dev.azora.website.builder.data.WebSceneFiles
-import dev.azora.website.builder.domain.WebSceneDoc
-import dev.azora.website.builder.domain.WebComponentTree
+import dev.azora.sdk.compiler.scene.domain.SceneDocument
+import dev.azora.sdk.compiler.scene.domain.SceneComponentTree
 
 /**
  * "Website Preview" tab: a live, in-Studio WYSIWYG render of the project's pages. Pages and the
@@ -51,8 +52,8 @@ fun WebsitePreviewPanel(context: PluginContext) {
     val fs = context.fileSystem
     val projectPath = context.projectPath
 
-    var pages by remember(projectPath) { mutableStateOf<List<WebSceneDoc>>(emptyList()) }
-    var componentsByName by remember(projectPath) { mutableStateOf<Map<String, WebSceneDoc>>(emptyMap()) }
+    var pages by remember(projectPath) { mutableStateOf<List<SceneDocument>>(emptyList()) }
+    var componentsByName by remember(projectPath) { mutableStateOf<Map<String, SceneDocument>>(emptyMap()) }
     var selected by remember(projectPath) { mutableStateOf(0) }
     var refresh by remember { mutableStateOf(0) }
     var nav by remember(projectPath) { mutableStateOf<List<NavLink>>(emptyList()) }
@@ -86,8 +87,8 @@ fun WebsitePreviewPanel(context: PluginContext) {
 
     LaunchedEffect(busSelection, viewPages) {
         val id = busSelection ?: return@LaunchedEffect
-        if (viewPages.getOrNull(selected)?.let { WebComponentTree.byId(it.nodes, id) } != null) return@LaunchedEffect
-        val idx = viewPages.indexOfFirst { WebComponentTree.byId(it.nodes, id) != null }
+        if (viewPages.getOrNull(selected)?.let { SceneComponentTree.byId(it.nodes, id) } != null) return@LaunchedEffect
+        val idx = viewPages.indexOfFirst { SceneComponentTree.byId(it.nodes, id) != null }
         if (idx >= 0) selected = idx
     }
 
@@ -155,7 +156,7 @@ fun WebsitePreviewPanel(context: PluginContext) {
                         } else {
                             val pool = page.nodes.associateBy { it.id }
                             val root = pool[page.rootId]
-                            if (root != null) WebComponentView(root, pool, page.instances, viewComponents, busSelection)
+                            if (root != null) SceneComponentView(root, pool, page.instances, viewComponents, busSelection)
                         }
                     }
                 }
@@ -170,7 +171,7 @@ private val SiteBackground = Color.White
 private val SiteContentColor = Color(0xFF000000)
 
 /**
- * Renders one [WebComponent] against the scene's node [pool]; container slots resolve to their
+ * Renders one [SceneComponent] against the scene's node [pool]; container slots resolve to their
  * referenced nodes, so a node reused in several slots renders once per reference. Instance anchors
  * expand the referenced component (switching to that component's pool). [selectedId] is the component
  * id selected in the node editor (via [WebSelectionBus]); the matching element is highlighted, and
@@ -183,11 +184,11 @@ private val SiteContentColor = Color(0xFF000000)
  * instance-of-itself cycles by component name.
  */
 @Composable
-private fun WebComponentView(
-    component: WebComponent,
-    pool: Map<String, WebComponent>,
+private fun SceneComponentView(
+    component: SceneComponent,
+    pool: Map<String, SceneComponent>,
     instances: Map<String, String>,
-    componentsByName: Map<String, WebSceneDoc>,
+    componentsByName: Map<String, SceneDocument>,
     selectedId: String?,
     lockedId: String? = null,
     visiting: Set<String> = emptySet(),
@@ -205,7 +206,7 @@ private fun WebComponentView(
                 val compPool = comp.nodes.associateBy { it.id }
                 val compRoot = compPool[comp.rootId]
                 if (compRoot != null) {
-                    WebComponentView(compRoot, compPool, comp.instances, componentsByName, selectedId, lock, visiting + name, childPath)
+                    SceneComponentView(compRoot, compPool, comp.instances, componentsByName, selectedId, lock, visiting + name, childPath)
                 }
             } else {
                 Text("⟨$name⟩", color = SiteContentColor.copy(alpha = 0.5f), fontSize = 12.sp)
@@ -219,34 +220,34 @@ private fun WebComponentView(
     // inherit them — matching the browser.
     CompositionLocalProvider(LocalTextStyle provides component.modifier.mergedTextStyle()) {
         when (component) {
-            is WebColumn -> Column(
+            is SceneColumn -> Column(
                 verticalArrangement = columnArrangement(component.arrangement, component.modifier.gap),
-                horizontalAlignment = if (component.arrangement == WebArrangement.CENTER) Alignment.CenterHorizontally else Alignment.Start,
+                horizontalAlignment = if (component.arrangement == SceneArrangement.CENTER) Alignment.CenterHorizontally else Alignment.Start,
                 modifier = component.modifier.toModifier(component.id, selectedId, lockedId)
             ) {
-                component.slots.forEach { slot -> slot.childId?.let { pool[it] }?.let { WebComponentView(it, pool, instances, componentsByName, selectedId, lockedId, visiting, childPath) } }
+                component.slots.forEach { slot -> slot.childId?.let { pool[it] }?.let { SceneComponentView(it, pool, instances, componentsByName, selectedId, lockedId, visiting, childPath) } }
             }
 
-            is WebRow -> Row(
+            is SceneRow -> Row(
                 horizontalArrangement = rowArrangement(component.arrangement, component.modifier.gap),
                 // CSS align-items: flex-start (center only when arrangement is CENTER).
-                verticalAlignment = if (component.arrangement == WebArrangement.CENTER) Alignment.CenterVertically else Alignment.Top,
+                verticalAlignment = if (component.arrangement == SceneArrangement.CENTER) Alignment.CenterVertically else Alignment.Top,
                 modifier = component.modifier.toModifier(component.id, selectedId, lockedId)
             ) {
-                component.slots.forEach { slot -> slot.childId?.let { pool[it] }?.let { WebComponentView(it, pool, instances, componentsByName, selectedId, lockedId, visiting, childPath) } }
+                component.slots.forEach { slot -> slot.childId?.let { pool[it] }?.let { SceneComponentView(it, pool, instances, componentsByName, selectedId, lockedId, visiting, childPath) } }
             }
 
             // CSS: display:flex; flex-direction:column (no justify/align) → a top-aligned flex column.
-            is WebBox -> Column(
-                verticalArrangement = columnArrangement(WebArrangement.START, component.modifier.gap),
+            is SceneBox -> Column(
+                verticalArrangement = columnArrangement(SceneArrangement.START, component.modifier.gap),
                 modifier = component.modifier.toModifier(component.id, selectedId, lockedId)
             ) {
-                component.slots.forEach { slot -> slot.childId?.let { pool[it] }?.let { WebComponentView(it, pool, instances, componentsByName, selectedId, lockedId, visiting, childPath) } }
+                component.slots.forEach { slot -> slot.childId?.let { pool[it] }?.let { SceneComponentView(it, pool, instances, componentsByName, selectedId, lockedId, visiting, childPath) } }
             }
 
             // <span>: inherits the ambient (cascaded) text style; this node's own font props are
             // already merged into it above.
-            is WebText -> Text(
+            is SceneText -> Text(
                 text = component.text,
                 style = LocalTextStyle.current,
                 modifier = component.modifier.toModifier(component.id, selectedId, lockedId)
@@ -255,7 +256,7 @@ private fun WebComponentView(
             // Our custom button — .az-button / AzoraButton primary. Mirrors the generated `.az-button`
             // base (brand purple, white label, 36px tall, 8px radius, Medium 11px label) as the DEFAULT
             // for unset fields, while every modifier the user sets is honored exactly as in the browser.
-            is WebButton -> {
+            is SceneButton -> {
                 val mod = component.modifier
                 val shape = webCornerShape(mod.effectiveCorners(8))
                 // Default height 36 only when neither fillMaxHeight nor an explicit height is set, so
@@ -277,7 +278,7 @@ private fun WebComponentView(
                         color = parseHex(mod.textColor) ?: Color.White,
                         fontSize = (mod.fontSize ?: 11).sp,
                         // Default Medium (`.az-button` font-weight 500) when unset; honor the modifier otherwise.
-                        fontWeight = if (mod.fontWeight == WebFontWeight.NORMAL) FontWeight.Medium else mod.fontWeight.toCompose(),
+                        fontWeight = if (mod.fontWeight == SceneFontWeight.NORMAL) FontWeight.Medium else mod.fontWeight.toCompose(),
                         maxLines = 1
                     )
                 }
@@ -285,7 +286,7 @@ private fun WebComponentView(
 
             // <a>: underlined; browser default unvisited link color #0000EE unless overridden. Font
             // size/weight inherit from the ambient style.
-            is WebLink -> Text(
+            is SceneLink -> Text(
                 text = component.text,
                 style = LocalTextStyle.current.copy(
                     color = parseHex(component.modifier.textColor) ?: Color(0xFF0000EE),
@@ -295,14 +296,14 @@ private fun WebComponentView(
             )
 
             // <img>: src usually unset in-editor, so show the alt text as a broken image would.
-            is WebImage -> Text(
+            is SceneImage -> Text(
                 component.alt.ifBlank { "image" },
                 style = LocalTextStyle.current,
                 modifier = component.modifier.toModifier(component.id, selectedId, lockedId)
             )
 
             // <input>: plain native text field, honoring background/border/clip/alpha/size/padding.
-            is WebInput -> {
+            is SceneInput -> {
                 val mod = component.modifier
                 val shape = webCornerShape(mod.effectiveCorners(2))
                 var base = mod.sizing()
@@ -322,7 +323,7 @@ private fun WebComponentView(
             }
 
             // <div> spacer: no intrinsic height (0) unless one is set.
-            is WebSpacer -> Spacer(modifier = component.modifier.toModifier(component.id, selectedId, lockedId).height((component.modifier.height ?: 0).dp))
+            is SceneSpacer -> Spacer(modifier = component.modifier.toModifier(component.id, selectedId, lockedId).height((component.modifier.height ?: 0).dp))
         }
     }
 }
@@ -330,38 +331,38 @@ private fun WebComponentView(
 /** Ambient text style with this modifier's *set* font properties merged in (CSS-style inheritance:
  *  each property is applied only when set, otherwise inherited from the parent). */
 @Composable
-private fun WebModifier.mergedTextStyle(): TextStyle {
+private fun SceneModifier.mergedTextStyle(): TextStyle {
     var s = LocalTextStyle.current
     fontSize?.let { s = s.copy(fontSize = it.sp) }
-    if (fontWeight != WebFontWeight.NORMAL) s = s.copy(fontWeight = fontWeight.toCompose())
+    if (fontWeight != SceneFontWeight.NORMAL) s = s.copy(fontWeight = fontWeight.toCompose())
     parseHex(textColor)?.let { s = s.copy(color = it) }
-    if (textAlign != WebTextAlign.START) s = s.copy(
+    if (textAlign != SceneTextAlign.START) s = s.copy(
         textAlign = when (textAlign) {
-            WebTextAlign.CENTER -> TextAlign.Center
-            WebTextAlign.END -> TextAlign.End
-            WebTextAlign.START -> TextAlign.Start
+            SceneTextAlign.CENTER -> TextAlign.Center
+            SceneTextAlign.END -> TextAlign.End
+            SceneTextAlign.START -> TextAlign.Start
         }
     )
     return s
 }
 
 // CSS containers carry both justify-content (the arrangement) and `gap`; combine them with spacedBy.
-private fun columnArrangement(a: WebArrangement, gap: Int?): Arrangement.Vertical = when (a) {
-    WebArrangement.START -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.Top) } ?: Arrangement.Top
-    WebArrangement.CENTER -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.CenterVertically) } ?: Arrangement.Center
-    WebArrangement.END -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.Bottom) } ?: Arrangement.Bottom
-    WebArrangement.SPACE_BETWEEN -> Arrangement.SpaceBetween
+private fun columnArrangement(a: SceneArrangement, gap: Int?): Arrangement.Vertical = when (a) {
+    SceneArrangement.START -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.Top) } ?: Arrangement.Top
+    SceneArrangement.CENTER -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.CenterVertically) } ?: Arrangement.Center
+    SceneArrangement.END -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.Bottom) } ?: Arrangement.Bottom
+    SceneArrangement.SPACE_BETWEEN -> Arrangement.SpaceBetween
 }
 
-private fun rowArrangement(a: WebArrangement, gap: Int?): Arrangement.Horizontal = when (a) {
-    WebArrangement.START -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.Start) } ?: Arrangement.Start
-    WebArrangement.CENTER -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.CenterHorizontally) } ?: Arrangement.Center
-    WebArrangement.END -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.End) } ?: Arrangement.End
-    WebArrangement.SPACE_BETWEEN -> Arrangement.SpaceBetween
+private fun rowArrangement(a: SceneArrangement, gap: Int?): Arrangement.Horizontal = when (a) {
+    SceneArrangement.START -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.Start) } ?: Arrangement.Start
+    SceneArrangement.CENTER -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.CenterHorizontally) } ?: Arrangement.Center
+    SceneArrangement.END -> gap?.let { Arrangement.spacedBy(it.dp, Alignment.End) } ?: Arrangement.End
+    SceneArrangement.SPACE_BETWEEN -> Arrangement.SpaceBetween
 }
 
 /** Size-only modifier (width/height/fill) — the part shared by elements that draw their own chrome. */
-private fun WebModifier.sizing(): Modifier {
+private fun SceneModifier.sizing(): Modifier {
     var m: Modifier = Modifier
     if (fillMaxWidth) m = m.fillMaxWidth()
     if (fillMaxHeight) m = m.fillMaxHeight()
@@ -372,13 +373,13 @@ private fun WebModifier.sizing(): Modifier {
 
 /** Resolved per-corner (possibly elliptical) radius: [corners] if set, else legacy uniform
  *  [cornerRadius], else [default] (a brand default for chrome-drawing elements like buttons). */
-private fun WebModifier.effectiveCorners(default: Int): WebCornerRadius =
-    corners ?: cornerRadius?.let { WebCornerRadius.uniform(it) } ?: WebCornerRadius.uniform(default)
+private fun SceneModifier.effectiveCorners(default: Int): SceneCornerRadius =
+    corners ?: cornerRadius?.let { SceneCornerRadius.uniform(it) } ?: SceneCornerRadius.uniform(default)
 
 /** A Compose [Shape] with per-corner, optionally-elliptical radii (matches the generated CSS slash form). */
-private fun webCornerShape(c: WebCornerRadius): Shape = object : Shape {
+private fun webCornerShape(c: SceneCornerRadius): Shape = object : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        fun corner(corner: WebCorner) = with(density) { CornerRadius(corner.x.dp.toPx(), corner.y.dp.toPx()) }
+        fun corner(corner: SceneCorner) = with(density) { CornerRadius(corner.x.dp.toPx(), corner.y.dp.toPx()) }
         return Outline.Rounded(
             RoundRect(
                 left = 0f, top = 0f, right = size.width, bottom = size.height,
@@ -396,7 +397,7 @@ private fun webCornerShape(c: WebCornerRadius): Shape = object : Shape {
  *  minus inner via even-odd fill), which avoids stroke-centering/clipping quirks and always renders
  *  rounded corners. Applied before the corner clip in [toModifier] so an outside/center border can
  *  extend past the edge. */
-private fun Modifier.webBorder(width: Int, color: Color, position: WebBorderPosition, corners: WebCornerRadius): Modifier =
+private fun Modifier.webBorder(width: Int, color: Color, position: SceneBorderPosition, corners: SceneCornerRadius): Modifier =
     this.drawWithContent {
         drawContent()
         if (width <= 0) return@drawWithContent
@@ -405,13 +406,13 @@ private fun Modifier.webBorder(width: Int, color: Color, position: WebBorderPosi
         val outerInset: Float
         val innerInset: Float
         when (position) {
-            WebBorderPosition.INSIDE -> { outerInset = 0f; innerInset = w }
-            WebBorderPosition.OUTSIDE -> { outerInset = -w; innerInset = 0f }
-            WebBorderPosition.CENTER -> { outerInset = -w / 2f; innerInset = w / 2f }
+            SceneBorderPosition.INSIDE -> { outerInset = 0f; innerInset = w }
+            SceneBorderPosition.OUTSIDE -> { outerInset = -w; innerInset = 0f }
+            SceneBorderPosition.CENTER -> { outerInset = -w / 2f; innerInset = w / 2f }
         }
         fun ringRect(inset: Float): RoundRect {
             // Corner radius tracks the inset: radius = declared radius − inset (outset grows it).
-            fun c(corner: WebCorner) = CornerRadius(
+            fun c(corner: SceneCorner) = CornerRadius(
                 (corner.x.dp.toPx() - inset).coerceAtLeast(0f),
                 (corner.y.dp.toPx() - inset).coerceAtLeast(0f)
             )
@@ -429,7 +430,7 @@ private fun Modifier.webBorder(width: Int, color: Color, position: WebBorderPosi
         drawPath(path = ring, color = color)
     }
 
-private fun WebModifier.toModifier(id: String, selectedId: String?, lockedId: String?): Modifier {
+private fun SceneModifier.toModifier(id: String, selectedId: String?, lockedId: String?): Modifier {
     val corners = effectiveCorners(0)
     val shape = webCornerShape(corners)
     var m = sizing()
@@ -460,11 +461,11 @@ private val SelectionHighlight = Color(0xFF2563EB)
 /** Our button's brand fill (Azora primary), matching the generated .az-button background. */
 private val AzButtonColor = Color(0xFFD14EEA)
 
-private fun WebFontWeight.toCompose() = when (this) {
-    WebFontWeight.NORMAL -> FontWeight.Normal
-    WebFontWeight.MEDIUM -> FontWeight.Medium
-    WebFontWeight.SEMI_BOLD -> FontWeight.SemiBold
-    WebFontWeight.BOLD -> FontWeight.Bold
+private fun SceneFontWeight.toCompose() = when (this) {
+    SceneFontWeight.NORMAL -> FontWeight.Normal
+    SceneFontWeight.MEDIUM -> FontWeight.Medium
+    SceneFontWeight.SEMI_BOLD -> FontWeight.SemiBold
+    SceneFontWeight.BOLD -> FontWeight.Bold
 }
 
 private fun parseHex(hex: String?): Color? {
